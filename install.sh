@@ -17,7 +17,7 @@ pip3 install -r requirements.txt
 if [ ! -f .env ]; then
     echo "[2/4] Criando .env a partir do exemplo..."
     cp .env.example .env
-    echo "      ATENÇÃO: edite o arquivo .env e defina SITE_NAME e ADMIN_TOKEN antes de continuar."
+    echo "      ATENÇÃO: edite apenas a linha SITE_NAME com o email da unidade."
     echo "      Use: nano .env"
 else
     echo "[2/4] Arquivo .env já existe, pulando."
