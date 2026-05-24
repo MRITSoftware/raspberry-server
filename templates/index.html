@@ -285,8 +285,10 @@ async function connectManual() {
             btn.textContent = 'Conectado!';
             loadWifiCurrent();
         } else {
-            msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}</div>`;
+            const extra = d.hotspot_restored ? '<br><small>⚠️ Hotspot restaurado — você ainda está conectado. Tente novamente.</small>' : '';
+            msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}${extra}</div>`;
             btn.disabled = false; btn.textContent = 'Conectar';
+            if (d.hotspot_restored) loadHotspotStatus();
         }
     } catch(e) {
         msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`;
@@ -361,12 +363,14 @@ async function connectWifi() {
         });
         const d = await r.json();
         if (d.ok) {
-            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:10px;">✓ ${d.message}<br><small>Reconecte ao Wi-Fi "${selectedSsid}" e acesse o painel novamente.</small></div>`;
+            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:10px;">✓ ${d.message}<br><small>Reconecte ao Wi-Fi "${esc(selectedSsid)}" e acesse o painel novamente.</small></div>`;
             btn.textContent = 'Conectado!';
             loadWifiCurrent();
         } else {
-            msg.innerHTML = `<div class="msg msg-err" style="margin-top:10px;">Erro: ${d.error}</div>`;
+            const extra = d.hotspot_restored ? '<br><small>⚠️ Hotspot restaurado — você ainda está conectado. Tente novamente com a senha correta.</small>' : '';
+            msg.innerHTML = `<div class="msg msg-err" style="margin-top:10px;">Erro: ${d.error}${extra}</div>`;
             btn.disabled = false; btn.textContent = 'Tentar novamente';
+            if (d.hotspot_restored) loadHotspotStatus();
         }
     } catch(e) {
         msg.innerHTML = `<div class="msg msg-err" style="margin-top:10px;">Erro de conexão: ${e.message}</div>`;

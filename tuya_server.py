@@ -1989,13 +1989,11 @@ def api_wifi_connect():
     if not ssid:
         return jsonify({"ok": False, "error": "SSID obrigatório"}), 400
 
+    was_hotspot = _hotspot_running()
     try:
-        if _hotspot_running():
-            subprocess.run(["sudo", "pkill", "-F", HOTSPOT_PID_PATH], capture_output=True, timeout=5)
-            subprocess.run(["sudo", "pkill", "-F", DNSMASQ_PID_PATH], capture_output=True, timeout=5)
-            subprocess.run(["sudo", "ip", "addr", "flush", "dev", "wlan0"], capture_output=True, timeout=5)
-            subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "yes"], capture_output=True, timeout=10)
-            time.sleep(2)
+        if was_hotspot:
+            _stop_hotspot_internal()
+            time.sleep(1)
 
         args = ["device", "wifi", "connect", ssid]
         if password:
@@ -2004,13 +2002,21 @@ def api_wifi_connect():
         if r.returncode == 0:
             log(f"[WIFI] Conectado a {ssid}")
             return jsonify({"ok": True, "message": f"Conectado a '{ssid}'"}), 200
+
         err = (r.stderr or r.stdout).strip()
         log(f"[WIFI] Falha ao conectar a {ssid}: {err}")
-        return jsonify({"ok": False, "error": err}), 500
+        if was_hotspot:
+            log("[WIFI] Restaurando hotspot após falha na conexão")
+            _start_hotspot_internal()
+        return jsonify({"ok": False, "error": err, "hotspot_restored": was_hotspot}), 500
     except subprocess.TimeoutExpired:
-        return jsonify({"ok": False, "error": "Timeout ao conectar — verifique a senha e tente novamente"}), 500
+        if was_hotspot:
+            _start_hotspot_internal()
+        return jsonify({"ok": False, "error": "Timeout — verifique a senha e tente novamente", "hotspot_restored": was_hotspot}), 500
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        if was_hotspot:
+            _start_hotspot_internal()
+        return jsonify({"ok": False, "error": str(e), "hotspot_restored": was_hotspot}), 500
 
 @app.route("/api/wifi/backup", methods=["GET"])
 def api_wifi_backup_get():
@@ -2039,6 +2045,12 @@ def _check_connectivity() -> bool:
 
 def _connectivity_watch_loop():
     global _CONNECTIVITY_FAIL_COUNT
+    # Checagem no boot: aguarda NM conectar e sobe hotspot se não tiver internet
+    time.sleep(45)
+    if not _check_connectivity() and not _hotspot_running():
+        log("[WIFI] Sem internet no boot — iniciando hotspot automático (MRIT-Setup / mrit1234)")
+        _start_hotspot_internal("MRIT-Setup", "mrit1234")
+
     while True:
         time.sleep(60)
         if _hotspot_running():
@@ -2066,6 +2078,8 @@ def _connectivity_watch_loop():
                     except Exception as e:
                         log(f"[WIFI] Erro ao tentar reserva: {e}")
                 else:
+                    log("[WIFI] Sem reserva — subindo hotspot para reconfiguração")
+                    _start_hotspot_internal("MRIT-Setup", "mrit1234")
                     _CONNECTIVITY_FAIL_COUNT = 0
 
 HOTSPOT_CONF_PATH   = "/tmp/mrit-hostapd.conf"
@@ -2078,6 +2092,65 @@ def _hotspot_running() -> bool:
     r = subprocess.run(["pgrep", "-F", HOTSPOT_PID_PATH], capture_output=True)
     return r.returncode == 0
 
+def _start_hotspot_internal(ssid: str = "MRIT-Setup", password: str = "mrit1234"):
+    """Inicia o hotspot via hostapd. Retorna (ok, error_msg)."""
+    try:
+        try:
+            networks = _do_wifi_scan()
+            with open(WIFI_SCAN_CACHE_PATH, "w") as f:
+                json.dump(networks, f)
+        except Exception:
+            pass
+
+        subprocess.run(["sudo", "pkill", "-F", HOTSPOT_PID_PATH], capture_output=True)
+        subprocess.run(["sudo", "pkill", "-F", DNSMASQ_PID_PATH], capture_output=True)
+        time.sleep(1)
+
+        with open(HOTSPOT_CONF_PATH, "w") as f:
+            f.write(f"interface=wlan0\ndriver=nl80211\nssid={ssid}\n"
+                    f"hw_mode=g\nchannel=6\nwmm_enabled=0\nmacaddr_acl=0\n"
+                    f"auth_algs=1\nwpa=2\nwpa_passphrase={password}\n"
+                    f"wpa_key_mgmt=WPA-PSK\nrsn_pairwise=CCMP\n")
+
+        with open(DNSMASQ_CONF_PATH, "w") as f:
+            f.write("interface=wlan0\nbind-interfaces\nexcept-interface=lo\n"
+                    "dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h\n")
+
+        subprocess.run(["sudo", "nmcli", "device", "disconnect", "wlan0"], capture_output=True, timeout=10)
+        subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "no"], capture_output=True, timeout=10)
+        time.sleep(1)
+
+        subprocess.run(["sudo", "ip", "addr", "flush", "dev", "wlan0"], capture_output=True, timeout=5)
+        subprocess.run(["sudo", "ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0"], capture_output=True, timeout=5)
+        subprocess.run(["sudo", "ip", "link", "set", "wlan0", "up"], capture_output=True, timeout=5)
+
+        r = subprocess.run(
+            ["sudo", "hostapd", "-B", "-P", HOTSPOT_PID_PATH, HOTSPOT_CONF_PATH],
+            capture_output=True, text=True, timeout=15
+        )
+        if r.returncode != 0:
+            subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "yes"], capture_output=True)
+            return False, (r.stderr or r.stdout).strip()
+
+        subprocess.run(
+            ["sudo", "dnsmasq", f"--conf-file={DNSMASQ_CONF_PATH}", f"--pid-file={DNSMASQ_PID_PATH}"],
+            capture_output=True, timeout=10
+        )
+        log(f"[WIFI] Hotspot iniciado: SSID={ssid}")
+        return True, ""
+    except subprocess.TimeoutExpired:
+        return False, "Timeout ao iniciar hotspot"
+    except Exception as e:
+        return False, str(e)
+
+def _stop_hotspot_internal():
+    """Para o hotspot e devolve wlan0 ao NetworkManager."""
+    subprocess.run(["sudo", "pkill", "-F", HOTSPOT_PID_PATH], capture_output=True, timeout=10)
+    subprocess.run(["sudo", "pkill", "-F", DNSMASQ_PID_PATH], capture_output=True, timeout=10)
+    time.sleep(1)
+    subprocess.run(["sudo", "ip", "addr", "flush", "dev", "wlan0"], capture_output=True, timeout=5)
+    subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "yes"], capture_output=True, timeout=10)
+
 @app.route("/api/wifi/hotspot/status", methods=["GET"])
 def api_hotspot_status():
     return jsonify({"active": _hotspot_running()}), 200
@@ -2089,74 +2162,15 @@ def api_hotspot_start():
     password = data.get("password", "mrit1234").strip()
     if len(password) < 8:
         return jsonify({"ok": False, "error": "Senha precisa ter pelo menos 8 caracteres"}), 400
-
-    try:
-        # Escanear redes antes de desconectar wlan0 e salvar cache
-        try:
-            networks = _do_wifi_scan()
-            with open(WIFI_SCAN_CACHE_PATH, "w") as f:
-                json.dump(networks, f)
-        except Exception:
-            pass
-
-        # Parar instâncias anteriores
-        subprocess.run(["sudo", "pkill", "-F", HOTSPOT_PID_PATH],  capture_output=True)
-        subprocess.run(["sudo", "pkill", "-F", DNSMASQ_PID_PATH],  capture_output=True)
-        time.sleep(1)
-
-        # Escrever config do hostapd
-        with open(HOTSPOT_CONF_PATH, "w") as f:
-            f.write(f"interface=wlan0\ndriver=nl80211\nssid={ssid}\n"
-                    f"hw_mode=g\nchannel=6\nwmm_enabled=0\nmacaddr_acl=0\n"
-                    f"auth_algs=1\nwpa=2\nwpa_passphrase={password}\n"
-                    f"wpa_key_mgmt=WPA-PSK\nrsn_pairwise=CCMP\n")
-
-        # Escrever config do dnsmasq
-        with open(DNSMASQ_CONF_PATH, "w") as f:
-            f.write("interface=wlan0\nbind-interfaces\nexcept-interface=lo\n"
-                    "dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h\n")
-
-        # Tirar wlan0 do controle do NetworkManager
-        subprocess.run(["sudo", "nmcli", "device", "disconnect", "wlan0"], capture_output=True, timeout=10)
-        subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "no"], capture_output=True, timeout=10)
-        time.sleep(1)
-
-        # Configurar IP estático
-        subprocess.run(["sudo", "ip", "addr", "flush", "dev", "wlan0"], capture_output=True, timeout=5)
-        subprocess.run(["sudo", "ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0"], capture_output=True, timeout=5)
-        subprocess.run(["sudo", "ip", "link", "set", "wlan0", "up"], capture_output=True, timeout=5)
-
-        # Iniciar hostapd em background
-        r = subprocess.run(
-            ["sudo", "hostapd", "-B", "-P", HOTSPOT_PID_PATH, HOTSPOT_CONF_PATH],
-            capture_output=True, text=True, timeout=15
-        )
-        if r.returncode != 0:
-            subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "yes"], capture_output=True)
-            return jsonify({"ok": False, "error": (r.stderr or r.stdout).strip()}), 500
-
-        # Iniciar dnsmasq para DHCP
-        subprocess.run(
-            ["sudo", "dnsmasq", f"--conf-file={DNSMASQ_CONF_PATH}", f"--pid-file={DNSMASQ_PID_PATH}"],
-            capture_output=True, timeout=10
-        )
-
-        log(f"[WIFI] Hotspot iniciado via hostapd: SSID={ssid}")
+    ok, err = _start_hotspot_internal(ssid, password)
+    if ok:
         return jsonify({"ok": True, "ssid": ssid, "password": password}), 200
-
-    except subprocess.TimeoutExpired:
-        return jsonify({"ok": False, "error": "Timeout ao iniciar hotspot"}), 500
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": False, "error": err}), 500
 
 @app.route("/api/wifi/hotspot/stop", methods=["POST"])
 def api_hotspot_stop():
     try:
-        subprocess.run(["sudo", "pkill", "-F", HOTSPOT_PID_PATH],  capture_output=True, timeout=10)
-        subprocess.run(["sudo", "pkill", "-F", DNSMASQ_PID_PATH],  capture_output=True, timeout=10)
-        time.sleep(1)
-        subprocess.run(["sudo", "ip", "addr", "flush", "dev", "wlan0"], capture_output=True, timeout=5)
-        subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "yes"], capture_output=True, timeout=10)
+        _stop_hotspot_internal()
         log("[WIFI] Hotspot desligado")
         return jsonify({"ok": True}), 200
     except Exception as e:
