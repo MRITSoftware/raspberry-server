@@ -9,9 +9,10 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# Instalar dependências Python
-echo "[1/4] Instalando dependências Python..."
-pip3 install -r requirements.txt
+# Criar virtual environment e instalar dependências
+echo "[1/4] Criando virtual environment e instalando dependências Python..."
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
 
 # Criar .env a partir do exemplo se não existir
 if [ ! -f .env ]; then

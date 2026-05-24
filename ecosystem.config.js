@@ -2,7 +2,7 @@ module.exports = {
   apps: [{
     name: 'mrit-server',
     script: 'tuya_server.py',
-    interpreter: 'python3',
+    interpreter: './venv/bin/python3',
     instances: 1,
     autorestart: true,
     watch: false,

@@ -1,5 +1,6 @@
 .env
 config.json
+venv/
 devices_cache.json
 pending_heartbeat_logs.json
 __pycache__/
