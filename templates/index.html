@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MRIT Server</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a1a; }
+
+        header { background: #1a1a2e; color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+        header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+        .site-tag { background: #e94560; padding: 5px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; }
+
+        main { max-width: 860px; margin: 24px auto; padding: 0 16px 40px; }
+
+        .card { background: white; border-radius: 14px; padding: 22px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+        .card h2 { font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+
+        .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+        .status-item { background: #f8f9fa; border-radius: 10px; padding: 12px 10px; text-align: center; }
+        .status-label { font-size: 11px; color: #999; margin-bottom: 6px; }
+        .status-value { font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 5px; }
+
+        .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .green { background: #22c55e; } .red { background: #ef4444; } .yellow { background: #f59e0b; }
+
+        .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+        button { padding: 10px 20px; border-radius: 9px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; transition: opacity .15s; }
+        button:hover:not(:disabled) { opacity: 0.85; }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-scan { background: #1a1a2e; color: white; }
+        .btn-register { background: #e94560; color: white; }
+
+        .device-list { display: flex; flex-direction: column; gap: 8px; }
+        .device-item { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; border: 1px solid #e5e7eb; border-radius: 10px; gap: 10px; }
+        .device-id { font-size: 13px; font-weight: 600; font-family: monospace; word-break: break-all; }
+        .device-meta { font-size: 12px; color: #999; margin-top: 3px; }
+        .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .badge-new { background: #fef3c7; color: #92400e; }
+        .badge-ok  { background: #d1fae5; color: #065f46; }
+
+        .empty { text-align: center; color: #bbb; padding: 28px; font-size: 14px; }
+        .msg { padding: 11px 15px; border-radius: 9px; font-size: 13px; margin-top: 12px; line-height: 1.5; }
+        .msg-ok  { background: #d1fae5; color: #065f46; }
+        .msg-err { background: #fee2e2; color: #991b1b; }
+        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #555; border-radius: 50%; animation: spin .7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>MRIT Server</h1>
+    <span class="site-tag" id="header-site">carregando...</span>
+</header>
+
+<main>
+
+    <div class="card">
+        <h2>Status</h2>
+        <div class="status-grid">
+            <div class="status-item"><div class="status-label">Servidor</div><div class="status-value" id="st-server"><span class="spinner"></span></div></div>
+            <div class="status-item"><div class="status-label">Supabase</div><div class="status-value" id="st-supabase"><span class="spinner"></span></div></div>
+            <div class="status-item"><div class="status-label">Realtime</div><div class="status-value" id="st-realtime"><span class="spinner"></span></div></div>
+            <div class="status-item"><div class="status-label">Dispositivos</div><div class="status-value" id="st-devices"><span class="spinner"></span></div></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Dispositivos na Rede</h2>
+        <div class="actions">
+            <button class="btn-scan" id="btn-scan" onclick="scanDevices()">Escanear Rede</button>
+            <button class="btn-register" id="btn-register" onclick="registerAll()" style="display:none">Cadastrar Todos no Banco</button>
+        </div>
+        <div id="scan-list"><div class="empty">Clique em "Escanear Rede" para buscar placas Tuya na rede.</div></div>
+        <div id="register-msg"></div>
+    </div>
+
+    <div class="card">
+        <h2>Dispositivos Cadastrados</h2>
+        <div id="registered-list"><div class="empty">Nenhum dispositivo no cache local ainda.</div></div>
+    </div>
+
+</main>
+
+<script>
+let scannedDevices = [];
+
+async function loadStatus() {
+    try {
+        const r = await fetch('/api/status');
+        const d = await r.json();
+        document.getElementById('header-site').textContent = d.site || '—';
+        set('st-server',   dot('green') + 'Online');
+        set('st-supabase', d.supabase_configured ? dot('green') + 'OK' : dot('red') + 'Não configurado');
+        set('st-realtime', d.realtime_connected   ? dot('green') + 'Conectado' : dot('yellow') + 'Conectando...');
+        set('st-devices',  d.devices_cached + ' no cache');
+    } catch(e) {
+        set('st-server', dot('red') + 'Offline');
+    }
+}
+
+async function loadRegistered() {
+    try {
+        const r = await fetch('/api/devices/cached');
+        const d = await r.json();
+        const list = document.getElementById('registered-list');
+        if (!d.devices || d.devices.length === 0) {
+            list.innerHTML = '<div class="empty">Nenhum dispositivo no cache local ainda.</div>';
+            return;
+        }
+        list.innerHTML = '<div class="device-list">' + d.devices.map(dev => `
+            <div class="device-item">
+                <div>
+                    <div class="device-id">${dev.id}</div>
+                    <div class="device-meta">IP: ${dev.lan_ip || '—'} &nbsp;·&nbsp; Versão: ${dev.version || '—'} &nbsp;·&nbsp; Key: ${dev.local_key_masked || '—'}</div>
+                </div>
+                <span class="badge badge-ok">Cadastrado</span>
+            </div>`).join('') + '</div>';
+    } catch(e) {}
+}
+
+async function scanDevices() {
+    const btn = document.getElementById('btn-scan');
+    const regBtn = document.getElementById('btn-register');
+    const list = document.getElementById('scan-list');
+    document.getElementById('register-msg').innerHTML = '';
+    regBtn.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Escaneando...';
+    list.innerHTML = '<div class="empty"><span class="spinner"></span> Buscando placas Tuya na rede... (pode levar até 30 segundos)</div>';
+
+    try {
+        const r = await fetch('/tuya/devices');
+        const d = await r.json();
+        scannedDevices = d.devices || [];
+        if (scannedDevices.length === 0) {
+            list.innerHTML = '<div class="empty">Nenhuma placa Tuya encontrada. Verifique se está na mesma rede Wi-Fi.</div>';
+        } else {
+            list.innerHTML = '<div class="device-list">' + scannedDevices.map(dev => `
+                <div class="device-item">
+                    <div>
+                        <div class="device-id">${dev.id}</div>
+                        <div class="device-meta">IP: ${dev.ip || '—'} &nbsp;·&nbsp; Versão: ${dev.version || '—'}</div>
+                    </div>
+                    <span class="badge badge-new">Encontrada</span>
+                </div>`).join('') + '</div>';
+            regBtn.style.display = 'block';
+        }
+    } catch(e) {
+        list.innerHTML = '<div class="msg msg-err">Erro ao escanear: ' + e.message + '</div>';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Escanear Rede';
+    }
+}
+
+async function registerAll() {
+    const btn = document.getElementById('btn-register');
+    const msg = document.getElementById('register-msg');
+    btn.disabled = true;
+    btn.textContent = 'Cadastrando...';
+    msg.innerHTML = '';
+
+    try {
+        const r = await fetch('/tuya/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const d = await r.json();
+        if (d.ok) {
+            msg.innerHTML = `<div class="msg msg-ok">✓ ${d.message} — IP, local_key e versão salvos no banco automaticamente.</div>`;
+            await loadStatus();
+            await loadRegistered();
+        } else {
+            msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`;
+        }
+    } catch(e) {
+        msg.innerHTML = `<div class="msg msg-err">Erro de conexão: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Cadastrar Todos no Banco';
+    }
+}
+
+function dot(color) { return `<span class="dot ${color}"></span>`; }
+function set(id, html) { document.getElementById(id).innerHTML = html; }
+
+loadStatus();
+loadRegistered();
+setInterval(loadStatus, 30000);
+</script>
+</body>
+</html>

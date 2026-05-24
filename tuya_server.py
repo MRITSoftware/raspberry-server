@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import tinytuya
 
 # =========================
@@ -1842,9 +1842,42 @@ def validate_admin_token() -> bool:
     
     return True
 
+@app.route("/", methods=["GET"])
+def dashboard():
+    return render_template("index.html")
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "site": SITE_NAME}), 200
+
+@app.route("/api/status", methods=["GET"])
+def api_status():
+    cache = load_devices_cache()
+    device_ids = [k for k in cache.keys() if not k.startswith("_")]
+    return jsonify({
+        "site": SITE_NAME,
+        "version": APP_VERSION,
+        "supabase_configured": bool(SUPABASE_CONFIG.get("url") and SUPABASE_CONFIG.get("anon_key")),
+        "realtime_connected": REMOTE_COMMAND_WS_APP is not None,
+        "devices_cached": len(device_ids),
+    }), 200
+
+@app.route("/api/devices/cached", methods=["GET"])
+def api_devices_cached():
+    cache = load_devices_cache()
+    devices = []
+    for device_id, data in cache.items():
+        if device_id.startswith("_"):
+            continue
+        local_key = data.get("local_key", "")
+        masked = (local_key[:6] + "****") if len(local_key) > 6 else ("****" if local_key else "—")
+        devices.append({
+            "id": device_id,
+            "lan_ip": data.get("lan_ip"),
+            "version": data.get("version"),
+            "local_key_masked": masked,
+        })
+    return jsonify({"devices": devices}), 200
 
 @app.route("/config/tuya", methods=["POST"])
 def api_config_tuya():
