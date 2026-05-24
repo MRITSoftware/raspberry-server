@@ -29,23 +29,54 @@
         button { padding: 10px 20px; border-radius: 9px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; transition: opacity .15s; }
         button:hover:not(:disabled) { opacity: 0.85; }
         button:disabled { opacity: 0.45; cursor: not-allowed; }
-        .btn-scan { background: #1a1a2e; color: white; }
-        .btn-register { background: #e94560; color: white; }
+        .btn-dark   { background: #1a1a2e; color: white; }
+        .btn-red    { background: #e94560; color: white; }
+        .btn-green  { background: #22c55e; color: white; }
+        .btn-ghost  { background: #e5e7eb; color: #333; }
 
-        .device-list { display: flex; flex-direction: column; gap: 8px; }
-        .device-item { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; border: 1px solid #e5e7eb; border-radius: 10px; gap: 10px; }
-        .device-id { font-size: 13px; font-weight: 600; font-family: monospace; word-break: break-all; }
-        .device-meta { font-size: 12px; color: #999; margin-top: 3px; }
+        .device-list, .network-list { display: flex; flex-direction: column; gap: 8px; }
+        .device-item, .network-item { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; border: 1px solid #e5e7eb; border-radius: 10px; gap: 10px; }
+        .network-item { cursor: pointer; transition: background .15s; }
+        .network-item:hover { background: #f8f9fa; }
+        .network-item.current-net { border-color: #22c55e; background: #f0fdf4; }
+
+        .device-id, .net-ssid { font-size: 13px; font-weight: 600; font-family: monospace; word-break: break-all; }
+        .net-ssid { font-family: inherit; }
+        .device-meta, .net-meta { font-size: 12px; color: #999; margin-top: 3px; }
         .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-        .badge-new { background: #fef3c7; color: #92400e; }
-        .badge-ok  { background: #d1fae5; color: #065f46; }
+        .badge-new  { background: #fef3c7; color: #92400e; }
+        .badge-ok   { background: #d1fae5; color: #065f46; }
+        .badge-curr { background: #d1fae5; color: #065f46; }
+        .badge-open { background: #f3f4f6; color: #6b7280; }
+        .badge-sec  { background: #ede9fe; color: #5b21b6; }
+
+        .signal-bars { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
+        .signal-bars span { width: 4px; border-radius: 1px; background: #d1d5db; }
+        .signal-bars span.on { background: #22c55e; }
+        .signal-bars span:nth-child(1) { height: 4px; }
+        .signal-bars span:nth-child(2) { height: 7px; }
+        .signal-bars span:nth-child(3) { height: 11px; }
+        .signal-bars span:nth-child(4) { height: 16px; }
 
         .empty { text-align: center; color: #bbb; padding: 28px; font-size: 14px; }
         .msg { padding: 11px 15px; border-radius: 9px; font-size: 13px; margin-top: 12px; line-height: 1.5; }
         .msg-ok  { background: #d1fae5; color: #065f46; }
         .msg-err { background: #fee2e2; color: #991b1b; }
+        .msg-warn { background: #fef3c7; color: #92400e; }
         .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #555; border-radius: 50%; animation: spin .7s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Modal */
+        .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; padding: 16px; }
+        .modal-bg.open { display: flex; }
+        .modal { background: white; border-radius: 16px; padding: 24px; width: 100%; max-width: 420px; }
+        .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+        .modal .sub { font-size: 13px; color: #888; margin-bottom: 20px; }
+        .modal input { width: 100%; padding: 11px 14px; border: 1px solid #d1d5db; border-radius: 9px; font-size: 14px; margin-bottom: 10px; outline: none; }
+        .modal input:focus { border-color: #1a1a2e; }
+        .modal .modal-actions { display: flex; gap: 10px; margin-top: 6px; }
+        .modal .modal-actions button { flex: 1; }
+        .modal .warn-banner { background: #fef3c7; color: #92400e; padding: 10px 13px; border-radius: 8px; font-size: 12px; line-height: 1.5; margin-bottom: 14px; }
     </style>
 </head>
 <body>
@@ -57,6 +88,7 @@
 
 <main>
 
+    <!-- Status -->
     <div class="card">
         <h2>Status</h2>
         <div class="status-grid">
@@ -67,16 +99,29 @@
         </div>
     </div>
 
+    <!-- Wi-Fi -->
+    <div class="card">
+        <h2>Rede Wi-Fi</h2>
+        <div id="wifi-current" style="margin-bottom:14px; font-size:13px; color:#555;">verificando...</div>
+        <div class="actions">
+            <button class="btn-dark" id="btn-wifi-scan" onclick="scanWifi()">Escanear Redes</button>
+        </div>
+        <div id="wifi-list"></div>
+        <div id="wifi-msg"></div>
+    </div>
+
+    <!-- Tuya devices -->
     <div class="card">
         <h2>Dispositivos na Rede</h2>
         <div class="actions">
-            <button class="btn-scan" id="btn-scan" onclick="scanDevices()">Escanear Rede</button>
-            <button class="btn-register" id="btn-register" onclick="registerAll()" style="display:none">Cadastrar Todos no Banco</button>
+            <button class="btn-dark" id="btn-scan" onclick="scanDevices()">Escanear Rede</button>
+            <button class="btn-red"  id="btn-register" onclick="registerAll()" style="display:none">Cadastrar Todos no Banco</button>
         </div>
-        <div id="scan-list"><div class="empty">Clique em "Escanear Rede" para buscar placas Tuya na rede.</div></div>
+        <div id="scan-list"><div class="empty">Clique em "Escanear Rede" para buscar placas Tuya.</div></div>
         <div id="register-msg"></div>
     </div>
 
+    <!-- Registered -->
     <div class="card">
         <h2>Dispositivos Cadastrados</h2>
         <div id="registered-list"><div class="empty">Nenhum dispositivo no cache local ainda.</div></div>
@@ -84,27 +129,185 @@
 
 </main>
 
-<script>
-let scannedDevices = [];
+<!-- Modal senha Wi-Fi -->
+<div class="modal-bg" id="wifi-modal">
+    <div class="modal">
+        <h3 id="modal-ssid-title">Conectar à rede</h3>
+        <div class="sub" id="modal-ssid-sub"></div>
+        <div class="warn-banner">⚠️ O Pi mudará de rede Wi-Fi. A conexão com este painel será interrompida por alguns segundos. Reconecte pelo mesmo endereço após a troca.</div>
+        <input type="password" id="modal-password" placeholder="Senha da rede (deixe vazio se aberta)" />
+        <div id="modal-msg"></div>
+        <div class="modal-actions">
+            <button class="btn-ghost" onclick="closeModal()">Cancelar</button>
+            <button class="btn-green" id="btn-modal-connect" onclick="connectWifi()">Conectar</button>
+        </div>
+    </div>
+</div>
 
+<script>
+let selectedSsid = '';
+let currentSsid  = '';
+
+// ── Status ───────────────────────────────────────────
 async function loadStatus() {
     try {
-        const r = await fetch('/api/status');
-        const d = await r.json();
+        const d = await get('/api/status');
         document.getElementById('header-site').textContent = d.site || '—';
         set('st-server',   dot('green') + 'Online');
         set('st-supabase', d.supabase_configured ? dot('green') + 'OK' : dot('red') + 'Não configurado');
         set('st-realtime', d.realtime_connected   ? dot('green') + 'Conectado' : dot('yellow') + 'Conectando...');
         set('st-devices',  d.devices_cached + ' no cache');
+    } catch { set('st-server', dot('red') + 'Offline'); }
+}
+
+// ── Wi-Fi ─────────────────────────────────────────────
+async function loadWifiCurrent() {
+    try {
+        const d = await get('/api/wifi/status');
+        const el = document.getElementById('wifi-current');
+        if (d.current) {
+            currentSsid = d.current.ssid;
+            el.innerHTML = `<span style="color:#065f46;font-weight:600;">● Conectado:</span> ${d.current.ssid} &nbsp;·&nbsp; Sinal: ${d.current.signal}%`;
+        } else {
+            el.textContent = 'Sem conexão Wi-Fi ativa.';
+        }
+    } catch { document.getElementById('wifi-current').textContent = 'Não foi possível verificar a rede atual.'; }
+}
+
+async function scanWifi() {
+    const btn = document.getElementById('btn-wifi-scan');
+    const list = document.getElementById('wifi-list');
+    document.getElementById('wifi-msg').innerHTML = '';
+    btn.disabled = true; btn.textContent = 'Escaneando...';
+    list.innerHTML = '<div class="empty"><span class="spinner"></span> Buscando redes... (pode levar até 15 segundos)</div>';
+
+    try {
+        const d = await get('/api/wifi/scan');
+        if (!d.networks || d.networks.length === 0) {
+            list.innerHTML = '<div class="empty">Nenhuma rede Wi-Fi encontrada.</div>';
+        } else {
+            list.innerHTML = '<div class="network-list">' +
+                d.networks.map(n => `
+                    <div class="network-item ${n.ssid === currentSsid ? 'current-net' : ''}" onclick="openModal('${esc(n.ssid)}', ${n.signal})">
+                        <div>
+                            <div class="net-ssid">${esc(n.ssid)}</div>
+                            <div class="net-meta">${n.security || 'Aberta'}</div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            ${signalBars(n.signal)}
+                            ${n.ssid === currentSsid
+                                ? '<span class="badge badge-curr">Atual</span>'
+                                : (n.security && n.security !== 'Aberta'
+                                    ? '<span class="badge badge-sec">🔒</span>'
+                                    : '<span class="badge badge-open">Aberta</span>')}
+                        </div>
+                    </div>`).join('') + '</div>';
+        }
     } catch(e) {
-        set('st-server', dot('red') + 'Offline');
+        list.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false; btn.textContent = 'Escanear Redes';
     }
+}
+
+function openModal(ssid, signal) {
+    selectedSsid = ssid;
+    document.getElementById('modal-ssid-title').textContent = 'Conectar à rede';
+    document.getElementById('modal-ssid-sub').textContent = ssid;
+    document.getElementById('modal-password').value = '';
+    document.getElementById('modal-msg').innerHTML = '';
+    document.getElementById('btn-modal-connect').disabled = false;
+    document.getElementById('btn-modal-connect').textContent = 'Conectar';
+    document.getElementById('wifi-modal').classList.add('open');
+    setTimeout(() => document.getElementById('modal-password').focus(), 100);
+}
+
+function closeModal() {
+    document.getElementById('wifi-modal').classList.remove('open');
+}
+
+async function connectWifi() {
+    const password = document.getElementById('modal-password').value;
+    const btn = document.getElementById('btn-modal-connect');
+    const msg = document.getElementById('modal-msg');
+    btn.disabled = true; btn.textContent = 'Conectando...';
+    msg.innerHTML = '';
+
+    try {
+        const r = await fetch('/api/wifi/connect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ssid: selectedSsid, password })
+        });
+        const d = await r.json();
+        if (d.ok) {
+            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:10px;">✓ ${d.message}<br><small>Reconecte ao Wi-Fi "${selectedSsid}" e acesse o painel novamente.</small></div>`;
+            btn.textContent = 'Conectado!';
+            loadWifiCurrent();
+        } else {
+            msg.innerHTML = `<div class="msg msg-err" style="margin-top:10px;">Erro: ${d.error}</div>`;
+            btn.disabled = false; btn.textContent = 'Tentar novamente';
+        }
+    } catch(e) {
+        msg.innerHTML = `<div class="msg msg-err" style="margin-top:10px;">Erro de conexão: ${e.message}</div>`;
+        btn.disabled = false; btn.textContent = 'Tentar novamente';
+    }
+}
+
+// ── Tuya ──────────────────────────────────────────────
+async function scanDevices() {
+    const btn = document.getElementById('btn-scan');
+    const regBtn = document.getElementById('btn-register');
+    const list = document.getElementById('scan-list');
+    document.getElementById('register-msg').innerHTML = '';
+    regBtn.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Escaneando...';
+    list.innerHTML = '<div class="empty"><span class="spinner"></span> Buscando placas Tuya... (pode levar ~30 segundos)</div>';
+
+    try {
+        const d = await get('/tuya/devices');
+        const devices = d.devices || [];
+        if (devices.length === 0) {
+            list.innerHTML = '<div class="empty">Nenhuma placa Tuya encontrada. Verifique se está na mesma rede Wi-Fi.</div>';
+        } else {
+            list.innerHTML = '<div class="device-list">' + devices.map(dev => `
+                <div class="device-item">
+                    <div>
+                        <div class="device-id">${dev.id}</div>
+                        <div class="device-meta">IP: ${dev.ip || '—'} · Versão: ${dev.version || '—'}</div>
+                    </div>
+                    <span class="badge badge-new">Encontrada</span>
+                </div>`).join('') + '</div>';
+            regBtn.style.display = 'block';
+        }
+    } catch(e) {
+        list.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
+    } finally { btn.disabled = false; btn.textContent = 'Escanear Rede'; }
+}
+
+async function registerAll() {
+    const btn = document.getElementById('btn-register');
+    const msg = document.getElementById('register-msg');
+    btn.disabled = true; btn.textContent = 'Cadastrando...';
+    msg.innerHTML = '';
+
+    try {
+        const r = await fetch('/tuya/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const d = await r.json();
+        if (d.ok) {
+            msg.innerHTML = `<div class="msg msg-ok">✓ ${d.message} — IP, local_key e versão salvos no banco.</div>`;
+            loadStatus(); loadRegistered();
+        } else {
+            msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`;
+        }
+    } catch(e) {
+        msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
+    } finally { btn.disabled = false; btn.textContent = 'Cadastrar Todos no Banco'; }
 }
 
 async function loadRegistered() {
     try {
-        const r = await fetch('/api/devices/cached');
-        const d = await r.json();
+        const d = await get('/api/devices/cached');
         const list = document.getElementById('registered-list');
         if (!d.devices || d.devices.length === 0) {
             list.innerHTML = '<div class="empty">Nenhum dispositivo no cache local ainda.</div>';
@@ -114,83 +317,32 @@ async function loadRegistered() {
             <div class="device-item">
                 <div>
                     <div class="device-id">${dev.id}</div>
-                    <div class="device-meta">IP: ${dev.lan_ip || '—'} &nbsp;·&nbsp; Versão: ${dev.version || '—'} &nbsp;·&nbsp; Key: ${dev.local_key_masked || '—'}</div>
+                    <div class="device-meta">IP: ${dev.lan_ip || '—'} · Versão: ${dev.version || '—'} · Key: ${dev.local_key_masked || '—'}</div>
                 </div>
                 <span class="badge badge-ok">Cadastrado</span>
             </div>`).join('') + '</div>';
-    } catch(e) {}
+    } catch {}
 }
 
-async function scanDevices() {
-    const btn = document.getElementById('btn-scan');
-    const regBtn = document.getElementById('btn-register');
-    const list = document.getElementById('scan-list');
-    document.getElementById('register-msg').innerHTML = '';
-    regBtn.style.display = 'none';
-    btn.disabled = true;
-    btn.textContent = 'Escaneando...';
-    list.innerHTML = '<div class="empty"><span class="spinner"></span> Buscando placas Tuya na rede... (pode levar até 30 segundos)</div>';
-
-    try {
-        const r = await fetch('/tuya/devices');
-        const d = await r.json();
-        scannedDevices = d.devices || [];
-        if (scannedDevices.length === 0) {
-            list.innerHTML = '<div class="empty">Nenhuma placa Tuya encontrada. Verifique se está na mesma rede Wi-Fi.</div>';
-        } else {
-            list.innerHTML = '<div class="device-list">' + scannedDevices.map(dev => `
-                <div class="device-item">
-                    <div>
-                        <div class="device-id">${dev.id}</div>
-                        <div class="device-meta">IP: ${dev.ip || '—'} &nbsp;·&nbsp; Versão: ${dev.version || '—'}</div>
-                    </div>
-                    <span class="badge badge-new">Encontrada</span>
-                </div>`).join('') + '</div>';
-            regBtn.style.display = 'block';
-        }
-    } catch(e) {
-        list.innerHTML = '<div class="msg msg-err">Erro ao escanear: ' + e.message + '</div>';
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Escanear Rede';
-    }
+// ── Helpers ───────────────────────────────────────────
+function signalBars(pct) {
+    const bars = pct >= 75 ? 4 : pct >= 50 ? 3 : pct >= 25 ? 2 : 1;
+    return '<div class="signal-bars">' + [1,2,3,4].map(i => `<span class="${i<=bars?'on':''}"></span>`).join('') + '</div>';
 }
-
-async function registerAll() {
-    const btn = document.getElementById('btn-register');
-    const msg = document.getElementById('register-msg');
-    btn.disabled = true;
-    btn.textContent = 'Cadastrando...';
-    msg.innerHTML = '';
-
-    try {
-        const r = await fetch('/tuya/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-        const d = await r.json();
-        if (d.ok) {
-            msg.innerHTML = `<div class="msg msg-ok">✓ ${d.message} — IP, local_key e versão salvos no banco automaticamente.</div>`;
-            await loadStatus();
-            await loadRegistered();
-        } else {
-            msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`;
-        }
-    } catch(e) {
-        msg.innerHTML = `<div class="msg msg-err">Erro de conexão: ${e.message}</div>`;
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Cadastrar Todos no Banco';
-    }
-}
-
-function dot(color) { return `<span class="dot ${color}"></span>`; }
+function dot(c) { return `<span class="dot ${c}"></span>`; }
 function set(id, html) { document.getElementById(id).innerHTML = html; }
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+async function get(url) { const r = await fetch(url); return r.json(); }
 
+// Fechar modal clicando fora
+document.getElementById('wifi-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+
+// Init
 loadStatus();
+loadWifiCurrent();
 loadRegistered();
 setInterval(loadStatus, 30000);
+setInterval(loadWifiCurrent, 60000);
 </script>
 </body>
 </html>

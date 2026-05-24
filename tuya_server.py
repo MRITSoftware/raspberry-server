@@ -6,6 +6,7 @@ import traceback
 import threading
 import time
 import socket
+import subprocess
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse
@@ -1878,6 +1879,100 @@ def api_devices_cached():
             "local_key_masked": masked,
         })
     return jsonify({"devices": devices}), 200
+
+# =========================
+# WI-FI (nmcli)
+# =========================
+
+def _nmcli(*args, sudo=False, timeout=30) -> subprocess.CompletedProcess:
+    cmd = (["sudo", "nmcli"] if sudo else ["nmcli"]) + list(args)
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+def _parse_nmcli_terse(output: str, num_fields: int) -> List[List[str]]:
+    """Divide linhas do nmcli -t respeitando ':' escapados como '\\:'."""
+    rows = []
+    for line in output.strip().splitlines():
+        parts: List[str] = []
+        cur = ""
+        i = 0
+        while i < len(line):
+            if line[i] == "\\" and i + 1 < len(line) and line[i + 1] == ":":
+                cur += ":"
+                i += 2
+            elif line[i] == ":":
+                parts.append(cur)
+                cur = ""
+                i += 1
+            else:
+                cur += line[i]
+                i += 1
+        parts.append(cur)
+        if len(parts) >= num_fields:
+            rows.append(parts[:num_fields])
+    return rows
+
+@app.route("/api/wifi/status", methods=["GET"])
+def api_wifi_status():
+    try:
+        r = _nmcli("-t", "-f", "ACTIVE,SSID,SIGNAL,DEVICE", "device", "wifi")
+        current = None
+        for row in _parse_nmcli_terse(r.stdout, 4):
+            if row[0].lower() == "yes" and row[1]:
+                current = {"ssid": row[1], "signal": int(row[2]) if row[2].isdigit() else 0, "device": row[3]}
+                break
+        return jsonify({"current": current}), 200
+    except FileNotFoundError:
+        return jsonify({"error": "nmcli não encontrado — NetworkManager não está instalado"}), 501
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/wifi/scan", methods=["GET"])
+def api_wifi_scan():
+    try:
+        r = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "yes", timeout=35)
+        networks: List[Dict] = []
+        seen: set = set()
+        for row in _parse_nmcli_terse(r.stdout, 3):
+            ssid, signal, security = row[0], row[1], row[2]
+            if not ssid or ssid in seen:
+                continue
+            seen.add(ssid)
+            networks.append({
+                "ssid": ssid,
+                "signal": int(signal) if signal.isdigit() else 0,
+                "security": security or "Aberta",
+            })
+        networks.sort(key=lambda x: x["signal"], reverse=True)
+        return jsonify({"networks": networks}), 200
+    except FileNotFoundError:
+        return jsonify({"error": "nmcli não encontrado"}), 501
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/wifi/connect", methods=["POST"])
+def api_wifi_connect():
+    data = request.get_json(silent=True) or {}
+    ssid = data.get("ssid", "").strip()
+    password = data.get("password", "").strip()
+
+    if not ssid:
+        return jsonify({"ok": False, "error": "SSID obrigatório"}), 400
+
+    try:
+        args = ["device", "wifi", "connect", ssid]
+        if password:
+            args += ["password", password]
+        r = _nmcli(*args, sudo=True, timeout=40)
+        if r.returncode == 0:
+            log(f"[WIFI] Conectado a {ssid}")
+            return jsonify({"ok": True, "message": f"Conectado a '{ssid}'"}), 200
+        err = (r.stderr or r.stdout).strip()
+        log(f"[WIFI] Falha ao conectar a {ssid}: {err}")
+        return jsonify({"ok": False, "error": err}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "Timeout ao conectar — verifique a senha e tente novamente"}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/config/tuya", methods=["POST"])
 def api_config_tuya():

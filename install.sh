@@ -60,6 +60,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable mrit-server
 sudo systemctl start mrit-server
 
+# Permitir que o servidor troque de rede Wi-Fi via painel web
+echo "${CURRENT_USER} ALL=(ALL) NOPASSWD: /usr/bin/nmcli" | sudo tee /etc/sudoers.d/mrit-nmcli > /dev/null
+sudo chmod 440 /etc/sudoers.d/mrit-nmcli
+
 echo "      Serviço instalado e iniciado."
 
 # Verificar se subiu
