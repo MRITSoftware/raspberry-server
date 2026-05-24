@@ -1895,6 +1895,41 @@ def api_devices_cached():
         })
     return jsonify({"devices": devices}), 200
 
+@app.route("/api/devices/<device_id>", methods=["DELETE"])
+def api_device_delete(device_id: str):
+    """Remove dispositivo do cache local e do banco Supabase."""
+    errors = []
+
+    # Remove do cache local
+    try:
+        cache = load_devices_cache()
+        if device_id in cache:
+            del cache[device_id]
+            # Atualiza _last_active se era o último
+            if cache.get("_last_active") == device_id:
+                remaining = [k for k in cache if not k.startswith("_")]
+                cache["_last_active"] = remaining[0] if remaining else ""
+            with open(DEVICES_CACHE_PATH, "w", encoding="utf-8") as f:
+                json.dump(cache, f, indent=2, ensure_ascii=False)
+            with DEVICE_CACHE_LOCK:
+                DEVICE_CACHE.pop(device_id, None)
+    except Exception as e:
+        errors.append(f"cache: {e}")
+
+    # Remove do Supabase
+    try:
+        base_url = get_supabase_url()
+        headers = get_supabase_headers()
+        url = f"{base_url}/tuya_devices?tuya_device_id=eq.{device_id}&site_id=eq.{SITE_NAME}"
+        r = requests.delete(url, headers=headers, timeout=10)
+        if r.status_code not in (200, 204):
+            errors.append(f"supabase: {r.status_code}")
+    except Exception as e:
+        errors.append(f"supabase: {e}")
+
+    log(f"[DEVICE] Removido: {device_id}" + (f" (erros: {errors})" if errors else ""))
+    return jsonify({"ok": True, "id": device_id, "errors": errors}), 200
+
 # =========================
 # WI-FI (nmcli)
 # =========================
@@ -2069,6 +2104,29 @@ def _check_connectivity() -> bool:
     except Exception:
         return False
 
+def _send_server_heartbeat():
+    """Envia sinal de online ao Supabase para o site e para cada device no cache."""
+    try:
+        insert_heartbeat_ok_log(SITE_NAME, status="online")
+        with DEVICE_CACHE_LOCK:
+            device_ids = list(DEVICE_CACHE.keys())
+        for dev_id in device_ids:
+            try:
+                update_device_heartbeat(dev_id)
+            except Exception:
+                pass
+        log(f"[HEARTBEAT] Sinal online enviado para site={SITE_NAME}, {len(device_ids)} device(s)")
+    except Exception as e:
+        log(f"[HEARTBEAT] Erro ao enviar heartbeat: {e}")
+
+def _server_heartbeat_loop():
+    """Envia heartbeat periódico a cada 15 minutos."""
+    time.sleep(60)  # aguarda 1 min após o boot antes do primeiro envio
+    _send_server_heartbeat()
+    while True:
+        time.sleep(15 * 60)
+        _send_server_heartbeat()
+
 def _connectivity_watch_loop():
     global _CONNECTIVITY_FAIL_COUNT
     # Checagem no boot: aguarda NM conectar e sobe hotspot se não tiver internet
@@ -2076,6 +2134,9 @@ def _connectivity_watch_loop():
     if not _check_connectivity() and not _hotspot_running():
         log("[WIFI] Sem internet no boot — iniciando hotspot automático (MRIT-Setup / mrit1234)")
         _start_hotspot_internal("MRIT-Setup", "mrit1234")
+    else:
+        # Internet disponível no boot — heartbeat imediato
+        threading.Thread(target=_send_server_heartbeat, daemon=True).start()
 
     while True:
         time.sleep(60)
@@ -2083,6 +2144,9 @@ def _connectivity_watch_loop():
             _CONNECTIVITY_FAIL_COUNT = 0
             continue
         if _check_connectivity():
+            if _CONNECTIVITY_FAIL_COUNT > 0:
+                log("[WIFI] Conectividade restaurada — enviando heartbeat imediato")
+                threading.Thread(target=_send_server_heartbeat, daemon=True).start()
             _CONNECTIVITY_FAIL_COUNT = 0
         else:
             _CONNECTIVITY_FAIL_COUNT += 1
@@ -2099,6 +2163,7 @@ def _connectivity_watch_loop():
                         if r.returncode == 0:
                             log(f"[WIFI] Conectado à rede reserva: {backup['ssid']}")
                             _CONNECTIVITY_FAIL_COUNT = 0
+                            threading.Thread(target=_send_server_heartbeat, daemon=True).start()
                         else:
                             log(f"[WIFI] Falha na reserva: {(r.stderr or r.stdout).strip()}")
                     except Exception as e:
@@ -3307,6 +3372,8 @@ def start_server(host="0.0.0.0", port=8000):
     start_remote_command_listener()
     # Monitor de conectividade com fallback para rede reserva
     threading.Thread(target=_connectivity_watch_loop, daemon=True).start()
+    # Heartbeat periódico a cada 15 minutos
+    threading.Thread(target=_server_heartbeat_loop, daemon=True).start()
     app.run(host=host, port=port, debug=False, use_reloader=False)
 
 if __name__ == "__main__":

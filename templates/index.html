@@ -438,14 +438,32 @@ async function loadRegistered() {
             return;
         }
         list.innerHTML = '<div class="device-list">' + d.devices.map(dev => `
-            <div class="device-item">
-                <div>
+            <div class="device-item" id="dev-${dev.id}">
+                <div style="flex:1;min-width:0;">
                     <div class="device-id">${dev.id}</div>
                     <div class="device-meta">IP: ${dev.lan_ip || '—'} · Versão: ${dev.version || '—'} · Key: ${dev.local_key_masked || '—'}</div>
                 </div>
-                <span class="badge badge-ok">Cadastrado</span>
+                <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+                    <span class="badge badge-ok">Cadastrado</span>
+                    <button class="btn-ghost" style="padding:6px 12px;font-size:12px;color:#dc2626;" onclick="removeDevice('${dev.id}')">Remover</button>
+                </div>
             </div>`).join('') + '</div>';
     } catch {}
+}
+
+async function removeDevice(id) {
+    if (!confirm(`Remover dispositivo ${id} do cache e do banco?`)) return;
+    try {
+        const r = await fetch(`/api/devices/${id}`, { method: 'DELETE' });
+        const d = await r.json();
+        if (d.ok) {
+            const el = document.getElementById(`dev-${id}`);
+            if (el) el.remove();
+            loadStatus();
+        }
+    } catch(e) {
+        alert('Erro ao remover: ' + e.message);
+    }
 }
 
 // ── Hotspot ───────────────────────────────────────────
