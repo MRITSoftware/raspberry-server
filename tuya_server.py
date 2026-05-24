@@ -1974,6 +1974,49 @@ def api_wifi_connect():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/api/wifi/hotspot/status", methods=["GET"])
+def api_hotspot_status():
+    try:
+        r = _nmcli("-t", "-f", "NAME,STATE", "connection", "show", "--active")
+        active = any("hotspot" in row[0].lower() for row in _parse_nmcli_terse(r.stdout, 2) if len(row) >= 2)
+        return jsonify({"active": active}), 200
+    except Exception as e:
+        return jsonify({"active": False, "error": str(e)}), 200
+
+@app.route("/api/wifi/hotspot/start", methods=["POST"])
+def api_hotspot_start():
+    data = request.get_json(silent=True) or {}
+    ssid     = data.get("ssid",     "MRIT-Setup").strip() or "MRIT-Setup"
+    password = data.get("password", "mrit1234").strip()
+    if len(password) < 8:
+        return jsonify({"ok": False, "error": "Senha do hotspot precisa ter pelo menos 8 caracteres"}), 400
+    try:
+        r = _nmcli("device", "wifi", "hotspot", "ifname", "wlan0",
+                   "ssid", ssid, "password", password, sudo=True, timeout=30)
+        if r.returncode == 0:
+            log(f"[WIFI] Hotspot iniciado: SSID={ssid}")
+            return jsonify({"ok": True, "ssid": ssid, "password": password}), 200
+        return jsonify({"ok": False, "error": (r.stderr or r.stdout).strip()}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "Timeout ao iniciar hotspot"}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/wifi/hotspot/stop", methods=["POST"])
+def api_hotspot_stop():
+    try:
+        r = _nmcli("connection", "down", "Hotspot", sudo=True, timeout=15)
+        if r.returncode == 0:
+            log("[WIFI] Hotspot desligado")
+            return jsonify({"ok": True}), 200
+        # Tenta deletar se não conseguiu só desligar
+        r2 = _nmcli("connection", "delete", "Hotspot", sudo=True, timeout=15)
+        if r2.returncode == 0:
+            return jsonify({"ok": True}), 200
+        return jsonify({"ok": False, "error": (r.stderr or r.stdout).strip()}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route("/config/tuya", methods=["POST"])
 def api_config_tuya():
     """

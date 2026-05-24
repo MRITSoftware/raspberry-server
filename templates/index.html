@@ -110,6 +110,27 @@
         <div id="wifi-msg"></div>
     </div>
 
+    <!-- Hotspot -->
+    <div class="card">
+        <h2>Hotspot Wi-Fi</h2>
+        <div id="hotspot-status" style="font-size:13px;color:#555;margin-bottom:14px;">verificando...</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
+            <div>
+                <div style="font-size:11px;color:#999;margin-bottom:4px;">Nome da rede (SSID)</div>
+                <input id="hs-ssid" type="text" value="MRIT-Setup" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:14px;width:180px;outline:none;">
+            </div>
+            <div>
+                <div style="font-size:11px;color:#999;margin-bottom:4px;">Senha (mín. 8 caracteres)</div>
+                <input id="hs-password" type="text" value="mrit1234" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:14px;width:180px;outline:none;">
+            </div>
+        </div>
+        <div class="actions">
+            <button class="btn-green" id="btn-hs-start" onclick="startHotspot()">Ligar Hotspot</button>
+            <button class="btn-ghost" id="btn-hs-stop"  onclick="stopHotspot()" style="display:none">Desligar Hotspot</button>
+        </div>
+        <div id="hotspot-msg"></div>
+    </div>
+
     <!-- Tuya devices -->
     <div class="card">
         <h2>Dispositivos na Rede</h2>
@@ -324,6 +345,73 @@ async function loadRegistered() {
     } catch {}
 }
 
+// ── Hotspot ───────────────────────────────────────────
+async function loadHotspotStatus() {
+    try {
+        const d = await get('/api/wifi/hotspot/status');
+        const el = document.getElementById('hotspot-status');
+        const btnStart = document.getElementById('btn-hs-start');
+        const btnStop  = document.getElementById('btn-hs-stop');
+        if (d.active) {
+            const ssid = document.getElementById('hs-ssid').value || 'MRIT-Setup';
+            el.innerHTML = `<span style="color:#065f46;font-weight:600;">● Hotspot ativo:</span> ${ssid}`;
+            btnStart.style.display = 'none';
+            btnStop.style.display  = 'block';
+        } else {
+            el.innerHTML = '<span style="color:#999;">● Hotspot desligado</span>';
+            btnStart.style.display = 'block';
+            btnStop.style.display  = 'none';
+        }
+    } catch {}
+}
+
+async function startHotspot() {
+    const ssid     = document.getElementById('hs-ssid').value.trim();
+    const password = document.getElementById('hs-password').value.trim();
+    const btn = document.getElementById('btn-hs-start');
+    const msg = document.getElementById('hotspot-msg');
+    btn.disabled = true; btn.textContent = 'Ligando...';
+    msg.innerHTML = '';
+    try {
+        const r = await fetch('/api/wifi/hotspot/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ssid, password })
+        });
+        const d = await r.json();
+        if (d.ok) {
+            msg.innerHTML = `<div class="msg msg-ok">✓ Hotspot "<b>${d.ssid}</b>" ativo · Senha: <b>${d.password}</b><br><small>Conecte outro dispositivo a esta rede para acessar o painel em http://10.42.0.1:8000</small></div>`;
+            loadHotspotStatus();
+        } else {
+            msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`;
+            btn.disabled = false; btn.textContent = 'Ligar Hotspot';
+        }
+    } catch(e) {
+        msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
+        btn.disabled = false; btn.textContent = 'Ligar Hotspot';
+    }
+}
+
+async function stopHotspot() {
+    const btn = document.getElementById('btn-hs-stop');
+    const msg = document.getElementById('hotspot-msg');
+    btn.disabled = true; btn.textContent = 'Desligando...';
+    msg.innerHTML = '';
+    try {
+        const d = await fetch('/api/wifi/hotspot/stop', { method: 'POST' }).then(r => r.json());
+        if (d.ok) {
+            msg.innerHTML = '<div class="msg msg-ok">Hotspot desligado.</div>';
+            loadHotspotStatus();
+        } else {
+            msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`;
+            btn.disabled = false; btn.textContent = 'Desligar Hotspot';
+        }
+    } catch(e) {
+        msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
+        btn.disabled = false; btn.textContent = 'Desligar Hotspot';
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────
 function signalBars(pct) {
     const bars = pct >= 75 ? 4 : pct >= 50 ? 3 : pct >= 25 ? 2 : 1;
@@ -340,6 +428,7 @@ document.getElementById('wifi-modal').addEventListener('click', e => { if (e.tar
 // Init
 loadStatus();
 loadWifiCurrent();
+loadHotspotStatus();
 loadRegistered();
 setInterval(loadStatus, 30000);
 setInterval(loadWifiCurrent, 60000);
