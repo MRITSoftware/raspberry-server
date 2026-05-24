@@ -60,9 +60,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable mrit-server
 sudo systemctl start mrit-server
 
-# Permitir que o servidor troque de rede Wi-Fi via painel web
-echo "${CURRENT_USER} ALL=(ALL) NOPASSWD: /usr/bin/nmcli" | sudo tee /etc/sudoers.d/mrit-nmcli > /dev/null
-sudo chmod 440 /etc/sudoers.d/mrit-nmcli
+# Instalar hostapd e dnsmasq para hotspot
+sudo apt-get install -y hostapd dnsmasq -qq
+sudo systemctl stop hostapd dnsmasq 2>/dev/null || true
+sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
+
+# Permitir comandos de rede sem senha (nmcli, ip, hostapd, dnsmasq, pkill)
+echo "${CURRENT_USER} ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/mrit-server > /dev/null
+sudo chmod 440 /etc/sudoers.d/mrit-server
 
 echo "      Serviço instalado e iniciado."
 
