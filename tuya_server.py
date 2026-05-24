@@ -2104,37 +2104,19 @@ def _check_connectivity() -> bool:
     except Exception:
         return False
 
-def _patch_servidor_online(device_id: str) -> bool:
-    """Atualiza servidor_online no banco para o device, sem pingar a placa física."""
-    if not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
-        return False
-    try:
-        now_utc = datetime.now(timezone.utc)
-        timestamp_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
-        base_url = get_supabase_url()
-        headers = {**get_supabase_headers(), "Prefer": "return=minimal"}
-        url = f"{base_url}/tuya_devices?tuya_device_id=eq.{device_id}&site_id=eq.{SITE_NAME}"
-        r = requests.patch(url, json={"servidor_online": timestamp_iso, "versao": APP_VERSION}, headers=headers, timeout=10)
-        return r.status_code in (200, 204)
-    except Exception as e:
-        log(f"[HEARTBEAT] Erro ao atualizar servidor_online para {device_id}: {e}")
-        return False
-
 def _send_server_heartbeat():
-    """Envia sinal de online ao Supabase: log de evento + atualiza servidor_online de cada device."""
-    try:
-        insert_heartbeat_ok_log(SITE_NAME, status="online")
-    except Exception as e:
-        log(f"[HEARTBEAT] Erro no log de heartbeat: {e}")
-
+    """Pinga cada plaquinha do cache e atualiza servidor_online no banco se ela responder."""
     try:
         cache = load_devices_cache()
         device_ids = [k for k in cache if not k.startswith("_")]
         for dev_id in device_ids:
-            _patch_servidor_online(dev_id)
-        log(f"[HEARTBEAT] servidor_online atualizado para site={SITE_NAME}, {len(device_ids)} device(s)")
+            try:
+                update_device_heartbeat(dev_id)
+            except Exception as e:
+                log(f"[HEARTBEAT] Erro ao pingar {dev_id}: {e}")
+        log(f"[HEARTBEAT] Ping concluído: {len(device_ids)} device(s)")
     except Exception as e:
-        log(f"[HEARTBEAT] Erro ao atualizar devices: {e}")
+        log(f"[HEARTBEAT] Erro: {e}")
 
 def _server_heartbeat_loop():
     """Envia heartbeat periódico a cada 15 minutos."""
