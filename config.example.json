@@ -1,0 +1,21 @@
+{
+    "site_name": "NOME_DA_UNIDADE",
+    "supabase": {
+        "url": "https://kihyhoqbrkwbfudttevo.supabase.co",
+        "anon_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtpaHlob3Ficmt3YmZ1ZHR0ZXZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTU1NTUwMjcsImV4cCI6MjAzMTEzMTAyN30.XtBTlSiqhsuUIKmhAMEyxofV-dRst7240n912m4O4Us"
+    },
+    "tuya_accounts": [
+        {
+            "access_id": "td7tp3cvq3nrc35emwg3",
+            "access_key": "bbcdaa3dfe9545fca4326fcfa1cf3e2c",
+            "endpoint": "https://openapi.tuyaus.com",
+            "uid": "az1715569264750N2mUr"
+        },
+        {
+            "access_id": "wwxsqj37wnfdnp98wu54",
+            "access_key": "d7a140221f3b4e8f916601af4fbd6816",
+            "endpoint": "https://openapi.tuyaus.com",
+            "uid": "az1759235287550HcJRz"
+        }
+    ]
+}

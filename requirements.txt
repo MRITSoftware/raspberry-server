@@ -1,0 +1,5 @@
+Flask
+tinytuya
+requests
+websocket-client
+tuya-connector-python

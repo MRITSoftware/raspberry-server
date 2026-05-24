@@ -1,0 +1,8 @@
+.env
+config.json
+devices_cache.json
+pending_heartbeat_logs.json
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
