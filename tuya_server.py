@@ -1997,8 +1997,12 @@ def api_wifi_connect():
         def _do_connect_bg():
             time.sleep(0.8)  # garante que a resposta HTTP foi entregue ao cliente
             _stop_hotspot_internal()
-            time.sleep(1)
+            time.sleep(2)
             try:
+                # Remove perfis antigos (netplan ou outros) com esse SSID para evitar conflito de key-mgmt
+                subprocess.run(["sudo", "nmcli", "connection", "delete", ssid], capture_output=True, timeout=10)
+                subprocess.run(["sudo", "nmcli", "connection", "delete", f"netplan-wlan0-{ssid}"], capture_output=True, timeout=10)
+                time.sleep(1)
                 args = ["device", "wifi", "connect", ssid]
                 if password:
                     args += ["password", password]
@@ -2023,6 +2027,8 @@ def api_wifi_connect():
 
     # Sem hotspot: conexão síncrona normal
     try:
+        subprocess.run(["sudo", "nmcli", "connection", "delete", ssid], capture_output=True, timeout=10)
+        subprocess.run(["sudo", "nmcli", "connection", "delete", f"netplan-wlan0-{ssid}"], capture_output=True, timeout=10)
         args = ["device", "wifi", "connect", ssid]
         if password:
             args += ["password", password]
