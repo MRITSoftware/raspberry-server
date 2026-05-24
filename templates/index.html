@@ -169,7 +169,6 @@
         <h2>Dispositivos na Rede</h2>
         <div class="actions">
             <button class="btn-dark" id="btn-scan" onclick="scanDevices()">Escanear Rede</button>
-            <button class="btn-red"  id="btn-register" onclick="registerAll()" style="display:none">Cadastrar Todos no Banco</button>
         </div>
         <div id="scan-list"><div class="empty">Clique em "Escanear Rede" para buscar placas Tuya.</div></div>
         <div id="register-msg"></div>
@@ -182,6 +181,23 @@
     </div>
 
 </main>
+
+<!-- Modal cadastro de dispositivo -->
+<div class="modal-bg" id="register-modal">
+    <div class="modal">
+        <h3>Cadastrar Dispositivo</h3>
+        <div class="sub" id="register-modal-device-id" style="font-family:monospace;word-break:break-all;"></div>
+        <div style="margin-bottom:14px;">
+            <div style="font-size:12px;color:#888;margin-bottom:6px;">Email da unidade (confirme antes de salvar)</div>
+            <input type="email" id="register-modal-site" placeholder="email@unidade.com.br" style="width:100%;padding:11px 14px;border:1px solid #d1d5db;border-radius:9px;font-size:14px;outline:none;" />
+        </div>
+        <div id="register-modal-msg"></div>
+        <div class="modal-actions">
+            <button class="btn-ghost" onclick="closeRegisterModal()">Cancelar</button>
+            <button class="btn-green" id="btn-register-confirm" onclick="confirmRegister()">Cadastrar</button>
+        </div>
+    </div>
+</div>
 
 <!-- Modal senha Wi-Fi -->
 <div class="modal-bg" id="wifi-modal">
@@ -379,12 +395,12 @@ async function connectWifi() {
 }
 
 // ── Tuya ──────────────────────────────────────────────
+let registerDeviceId = '';
+
 async function scanDevices() {
     const btn = document.getElementById('btn-scan');
-    const regBtn = document.getElementById('btn-register');
     const list = document.getElementById('scan-list');
     document.getElementById('register-msg').innerHTML = '';
-    regBtn.style.display = 'none';
     btn.disabled = true; btn.textContent = 'Escaneando...';
     list.innerHTML = '<div class="empty"><span class="spinner"></span> Buscando placas Tuya... (pode levar ~30 segundos)</div>';
 
@@ -396,37 +412,59 @@ async function scanDevices() {
         } else {
             list.innerHTML = '<div class="device-list">' + devices.map(dev => `
                 <div class="device-item">
-                    <div>
+                    <div style="flex:1;min-width:0;">
                         <div class="device-id">${dev.id}</div>
                         <div class="device-meta">IP: ${dev.ip || '—'} · Versão: ${dev.version || '—'}</div>
                     </div>
-                    <span class="badge badge-new">Encontrada</span>
+                    <button class="btn-green" style="flex-shrink:0;padding:7px 14px;font-size:13px;" onclick="openRegisterModal('${dev.id}')">Cadastrar</button>
                 </div>`).join('') + '</div>';
-            regBtn.style.display = 'block';
         }
     } catch(e) {
         list.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
     } finally { btn.disabled = false; btn.textContent = 'Escanear Rede'; }
 }
 
-async function registerAll() {
-    const btn = document.getElementById('btn-register');
-    const msg = document.getElementById('register-msg');
+function openRegisterModal(deviceId) {
+    registerDeviceId = deviceId;
+    document.getElementById('register-modal-device-id').textContent = deviceId;
+    document.getElementById('register-modal-site').value = document.getElementById('header-site').textContent || '';
+    document.getElementById('register-modal-msg').innerHTML = '';
+    document.getElementById('btn-register-confirm').disabled = false;
+    document.getElementById('btn-register-confirm').textContent = 'Cadastrar';
+    document.getElementById('register-modal').classList.add('open');
+    setTimeout(() => document.getElementById('register-modal-site').focus(), 100);
+}
+
+function closeRegisterModal() {
+    document.getElementById('register-modal').classList.remove('open');
+}
+
+async function confirmRegister() {
+    const siteId = document.getElementById('register-modal-site').value.trim();
+    const msg = document.getElementById('register-modal-msg');
+    const btn = document.getElementById('btn-register-confirm');
+    if (!siteId) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">Email da unidade obrigatório.</div>'; return; }
     btn.disabled = true; btn.textContent = 'Cadastrando...';
     msg.innerHTML = '';
-
     try {
-        const r = await fetch('/tuya/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const r = await fetch('/tuya/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: registerDeviceId, site_id: siteId })
+        });
         const d = await r.json();
         if (d.ok) {
-            msg.innerHTML = `<div class="msg msg-ok">✓ ${d.message} — IP, local_key e versão salvos no banco.</div>`;
+            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:8px;">✓ Dispositivo ${d.action} para <b>${esc(d.site_id)}</b>.</div>`;
+            btn.textContent = 'Cadastrado!';
             loadStatus(); loadRegistered();
         } else {
-            msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`;
+            msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}</div>`;
+            btn.disabled = false; btn.textContent = 'Cadastrar';
         }
     } catch(e) {
-        msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
-    } finally { btn.disabled = false; btn.textContent = 'Cadastrar Todos no Banco'; }
+        msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`;
+        btn.disabled = false; btn.textContent = 'Cadastrar';
+    }
 }
 
 async function loadRegistered() {
@@ -580,8 +618,9 @@ function set(id, html) { document.getElementById(id).innerHTML = html; }
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 async function get(url) { const r = await fetch(url); return r.json(); }
 
-// Fechar modal clicando fora
+// Fechar modais clicando fora
 document.getElementById('wifi-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+document.getElementById('register-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeRegisterModal(); });
 
 // Init
 loadStatus();

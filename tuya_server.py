@@ -2104,20 +2104,37 @@ def _check_connectivity() -> bool:
     except Exception:
         return False
 
+def _patch_servidor_online(device_id: str) -> bool:
+    """Atualiza servidor_online no banco para o device, sem pingar a placa física."""
+    if not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
+        return False
+    try:
+        now_utc = datetime.now(timezone.utc)
+        timestamp_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
+        base_url = get_supabase_url()
+        headers = {**get_supabase_headers(), "Prefer": "return=minimal"}
+        url = f"{base_url}/tuya_devices?tuya_device_id=eq.{device_id}&site_id=eq.{SITE_NAME}"
+        r = requests.patch(url, json={"servidor_online": timestamp_iso, "versao": APP_VERSION}, headers=headers, timeout=10)
+        return r.status_code in (200, 204)
+    except Exception as e:
+        log(f"[HEARTBEAT] Erro ao atualizar servidor_online para {device_id}: {e}")
+        return False
+
 def _send_server_heartbeat():
-    """Envia sinal de online ao Supabase para o site e para cada device no cache."""
+    """Envia sinal de online ao Supabase: log de evento + atualiza servidor_online de cada device."""
     try:
         insert_heartbeat_ok_log(SITE_NAME, status="online")
-        with DEVICE_CACHE_LOCK:
-            device_ids = list(DEVICE_CACHE.keys())
-        for dev_id in device_ids:
-            try:
-                update_device_heartbeat(dev_id)
-            except Exception:
-                pass
-        log(f"[HEARTBEAT] Sinal online enviado para site={SITE_NAME}, {len(device_ids)} device(s)")
     except Exception as e:
-        log(f"[HEARTBEAT] Erro ao enviar heartbeat: {e}")
+        log(f"[HEARTBEAT] Erro no log de heartbeat: {e}")
+
+    try:
+        cache = load_devices_cache()
+        device_ids = [k for k in cache if not k.startswith("_")]
+        for dev_id in device_ids:
+            _patch_servidor_online(dev_id)
+        log(f"[HEARTBEAT] servidor_online atualizado para site={SITE_NAME}, {len(device_ids)} device(s)")
+    except Exception as e:
+        log(f"[HEARTBEAT] Erro ao atualizar devices: {e}")
 
 def _server_heartbeat_loop():
     """Envia heartbeat periódico a cada 15 minutos."""
@@ -3159,6 +3176,72 @@ def fetch_local_key_from_tuya_api(tuya_device_id: str) -> Optional[str]:
     
     log(f"[TUYA_API] local_key não encontrada para {tuya_device_id} em nenhuma conta")
     return None
+
+@app.route("/tuya/register", methods=["POST"])
+def api_register_single_device():
+    """
+    Cadastra/atualiza um único device no banco.
+    Body: { "device_id": "...", "site_id": "email@unidade.com" }
+    O site_id é confirmado pelo usuário antes de chamar este endpoint.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        device_id = data.get("device_id", "").strip()
+        site_id   = data.get("site_id", "").strip() or SITE_NAME
+
+        if not device_id:
+            return jsonify({"ok": False, "error": "device_id obrigatório"}), 400
+
+        # Buscar dados do scan em cache de dispositivos LAN
+        lan_devices = scan_devices()
+        if device_id not in lan_devices:
+            return jsonify({"ok": False, "error": "Dispositivo não encontrado na rede — faça um novo scan"}), 404
+
+        lan_info = lan_devices[device_id]
+        lan_ip   = lan_info.get("ip")
+        version  = str(lan_info.get("version", "")) or None
+
+        # Tentar buscar local_key da API Tuya
+        local_key = fetch_local_key_from_tuya_api(device_id)
+        if not local_key:
+            log(f"[REGISTER] Não foi possível obter local_key para {device_id}")
+
+        # Criar ou atualizar no banco
+        db_devices = get_devices_from_db([device_id])
+        if device_id in db_devices:
+            db_row = db_devices[device_id]
+            row_id = str(db_row.get("id", ""))
+            ok = update_device_by_id_in_db(
+                device_row_id=row_id,
+                tuya_device_id=device_id,
+                site_id=site_id,
+                name=site_id,
+                local_key=local_key or db_row.get("local_key"),
+                lan_ip=lan_ip,
+                protocol_version=version
+            )
+            action = "atualizado"
+        else:
+            ok = create_device_in_db(
+                tuya_device_id=device_id,
+                site_id=site_id,
+                name=site_id,
+                local_key=local_key,
+                lan_ip=lan_ip,
+                protocol_version=version
+            )
+            action = "cadastrado"
+
+        # Salvar no cache local
+        save_device_to_cache(device_id, {"lan_ip": lan_ip, "local_key": local_key or "", "version": version or ""})
+
+        log(f"[REGISTER] Device {device_id} {action} para site_id={site_id}")
+        return jsonify({"ok": ok, "action": action, "device_id": device_id, "site_id": site_id}), 200
+
+    except Exception as e:
+        log(f"[ERRO] /tuya/register: {e}")
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/tuya/sync", methods=["POST"])
 def api_sync_devices():
