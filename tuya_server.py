@@ -1978,7 +1978,7 @@ def api_wifi_connect():
 def api_hotspot_status():
     try:
         r = _nmcli("-t", "-f", "NAME,STATE", "connection", "show", "--active")
-        active = any("hotspot" in row[0].lower() for row in _parse_nmcli_terse(r.stdout, 2) if len(row) >= 2)
+        active = any("mrit-hotspot" in row[0].lower() for row in _parse_nmcli_terse(r.stdout, 2) if len(row) >= 2)
         return jsonify({"active": active}), 200
     except Exception as e:
         return jsonify({"active": False, "error": str(e)}), 200
@@ -1991,12 +1991,33 @@ def api_hotspot_start():
     if len(password) < 8:
         return jsonify({"ok": False, "error": "Senha do hotspot precisa ter pelo menos 8 caracteres"}), 400
     try:
-        r = _nmcli("device", "wifi", "hotspot", "ifname", "wlan0",
-                   "ssid", ssid, "password", password, sudo=True, timeout=30)
-        if r.returncode == 0:
+        # Remover perfil anterior se existir
+        _nmcli("connection", "delete", "mrit-hotspot", sudo=True, timeout=10)
+    except Exception:
+        pass
+    try:
+        # Criar perfil com WPA-PSK explícito (evita 802.1X)
+        r = _nmcli(
+            "connection", "add",
+            "type", "wifi", "ifname", "wlan0",
+            "con-name", "mrit-hotspot",
+            "autoconnect", "no",
+            "ssid", ssid,
+            "802-11-wireless.mode", "ap",
+            "802-11-wireless.band", "bg",
+            "ipv4.method", "shared",
+            "wifi-sec.key-mgmt", "wpa-psk",
+            "wifi-sec.psk", password,
+            sudo=True, timeout=15
+        )
+        if r.returncode != 0:
+            return jsonify({"ok": False, "error": (r.stderr or r.stdout).strip()}), 500
+
+        r2 = _nmcli("connection", "up", "mrit-hotspot", sudo=True, timeout=30)
+        if r2.returncode == 0:
             log(f"[WIFI] Hotspot iniciado: SSID={ssid}")
             return jsonify({"ok": True, "ssid": ssid, "password": password}), 200
-        return jsonify({"ok": False, "error": (r.stderr or r.stdout).strip()}), 500
+        return jsonify({"ok": False, "error": (r2.stderr or r2.stdout).strip()}), 500
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "error": "Timeout ao iniciar hotspot"}), 500
     except Exception as e:
@@ -2005,15 +2026,10 @@ def api_hotspot_start():
 @app.route("/api/wifi/hotspot/stop", methods=["POST"])
 def api_hotspot_stop():
     try:
-        r = _nmcli("connection", "down", "Hotspot", sudo=True, timeout=15)
-        if r.returncode == 0:
-            log("[WIFI] Hotspot desligado")
-            return jsonify({"ok": True}), 200
-        # Tenta deletar se não conseguiu só desligar
-        r2 = _nmcli("connection", "delete", "Hotspot", sudo=True, timeout=15)
-        if r2.returncode == 0:
-            return jsonify({"ok": True}), 200
-        return jsonify({"ok": False, "error": (r.stderr or r.stdout).strip()}), 500
+        _nmcli("connection", "down",   "mrit-hotspot", sudo=True, timeout=15)
+        _nmcli("connection", "delete", "mrit-hotspot", sudo=True, timeout=15)
+        log("[WIFI] Hotspot desligado")
+        return jsonify({"ok": True}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
