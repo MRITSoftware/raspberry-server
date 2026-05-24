@@ -217,6 +217,19 @@ def update_tuya_accounts(accounts: List[Dict[str, str]]):
     TUYA_ACCOUNTS = accounts
     log(f"[OK] Configuração de contas Tuya atualizada: {len(accounts)} conta(s)")
 
+def update_backup_wifi(ssid: str, password: str):
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    else:
+        cfg = {}
+    cfg["backup_wifi"] = {"ssid": ssid, "password": password}
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=4, ensure_ascii=False)
+    global BACKUP_WIFI
+    BACKUP_WIFI = {"ssid": ssid, "password": password}
+    log(f"[OK] Rede reserva salva: {ssid}")
+
 # cria se não existir
 create_config_if_needed()
 
@@ -228,11 +241,13 @@ if os.path.exists(CONFIG_PATH):
     SUPABASE_CONFIG = cfg.get("supabase", {})
     TUYA_ACCOUNTS = cfg.get("tuya_accounts", [])
     ADMIN_TOKEN = cfg.get("admin_token", "")
+    BACKUP_WIFI: Dict[str, str] = cfg.get("backup_wifi", {"ssid": "", "password": ""})
 else:
     SITE_NAME = "SITE_DESCONHECIDO"
     SUPABASE_CONFIG = {}
     TUYA_ACCOUNTS = []
     ADMIN_TOKEN = ""
+    BACKUP_WIFI: Dict[str, str] = {"ssid": "", "password": ""}
 
 # Carregar de variáveis de ambiente e preencher config se vazio
 env_config = load_config_from_env()
@@ -1997,6 +2012,62 @@ def api_wifi_connect():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/api/wifi/backup", methods=["GET"])
+def api_wifi_backup_get():
+    ssid = BACKUP_WIFI.get("ssid", "")
+    return jsonify({"ssid": ssid, "configured": bool(ssid)}), 200
+
+@app.route("/api/wifi/backup", methods=["POST"])
+def api_wifi_backup_post():
+    data = request.get_json(silent=True) or {}
+    ssid = data.get("ssid", "").strip()
+    password = data.get("password", "")
+    if not ssid:
+        return jsonify({"ok": False, "error": "SSID obrigatório"}), 400
+    update_backup_wifi(ssid, password)
+    return jsonify({"ok": True, "ssid": ssid}), 200
+
+# ── Monitor de conectividade ──────────────────────────────────────────────────
+_CONNECTIVITY_FAIL_COUNT = 0
+
+def _check_connectivity() -> bool:
+    try:
+        r = subprocess.run(["ping", "-c", "1", "-W", "3", "8.8.8.8"], capture_output=True, timeout=6)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+def _connectivity_watch_loop():
+    global _CONNECTIVITY_FAIL_COUNT
+    while True:
+        time.sleep(60)
+        if _hotspot_running():
+            _CONNECTIVITY_FAIL_COUNT = 0
+            continue
+        if _check_connectivity():
+            _CONNECTIVITY_FAIL_COUNT = 0
+        else:
+            _CONNECTIVITY_FAIL_COUNT += 1
+            log(f"[WIFI] Sem conectividade ({_CONNECTIVITY_FAIL_COUNT}/3)")
+            if _CONNECTIVITY_FAIL_COUNT >= 3:
+                backup = BACKUP_WIFI
+                if backup.get("ssid"):
+                    log(f"[WIFI] Tentando rede reserva: {backup['ssid']}")
+                    try:
+                        args = ["device", "wifi", "connect", backup["ssid"]]
+                        if backup.get("password"):
+                            args += ["password", backup["password"]]
+                        r = _nmcli(*args, sudo=True, timeout=40)
+                        if r.returncode == 0:
+                            log(f"[WIFI] Conectado à rede reserva: {backup['ssid']}")
+                            _CONNECTIVITY_FAIL_COUNT = 0
+                        else:
+                            log(f"[WIFI] Falha na reserva: {(r.stderr or r.stdout).strip()}")
+                    except Exception as e:
+                        log(f"[WIFI] Erro ao tentar reserva: {e}")
+                else:
+                    _CONNECTIVITY_FAIL_COUNT = 0
+
 HOTSPOT_CONF_PATH   = "/tmp/mrit-hostapd.conf"
 HOTSPOT_PID_PATH    = "/tmp/mrit-hostapd.pid"
 DNSMASQ_CONF_PATH   = "/tmp/mrit-dnsmasq.conf"
@@ -3194,6 +3265,8 @@ def start_server(host="0.0.0.0", port=8000):
     start_device_refresh_loop()
     # Escutar comandos remotos em tempo real sem polling REST contínuo
     start_remote_command_listener()
+    # Monitor de conectividade com fallback para rede reserva
+    threading.Thread(target=_connectivity_watch_loop, daemon=True).start()
     app.run(host=host, port=port, debug=False, use_reloader=False)
 
 if __name__ == "__main__":

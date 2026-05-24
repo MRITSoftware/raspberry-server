@@ -108,6 +108,39 @@
         </div>
         <div id="wifi-list"></div>
         <div id="wifi-msg"></div>
+
+        <div style="margin-top:18px;border-top:1px solid #f0f0f0;padding-top:16px;">
+            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Conectar Manualmente</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+                <div>
+                    <div style="font-size:11px;color:#999;margin-bottom:4px;">SSID</div>
+                    <input id="manual-ssid" type="text" placeholder="Nome da rede" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:13px;width:190px;outline:none;">
+                </div>
+                <div>
+                    <div style="font-size:11px;color:#999;margin-bottom:4px;">Senha</div>
+                    <input id="manual-password" type="password" placeholder="Senha (vazio se aberta)" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:13px;width:190px;outline:none;">
+                </div>
+                <button class="btn-green" id="btn-manual-connect" onclick="connectManual()">Conectar</button>
+            </div>
+            <div id="manual-msg"></div>
+        </div>
+
+        <div style="margin-top:18px;border-top:1px solid #f0f0f0;padding-top:16px;">
+            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Rede Reserva (fallback automático)</div>
+            <div id="backup-status" style="font-size:13px;color:#555;margin-bottom:10px;">verificando...</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+                <div>
+                    <div style="font-size:11px;color:#999;margin-bottom:4px;">SSID</div>
+                    <input id="backup-ssid" type="text" placeholder="Nome da rede reserva" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:13px;width:190px;outline:none;">
+                </div>
+                <div>
+                    <div style="font-size:11px;color:#999;margin-bottom:4px;">Senha</div>
+                    <input id="backup-password" type="password" placeholder="Senha (opcional)" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:13px;width:190px;outline:none;">
+                </div>
+                <button class="btn-dark" onclick="saveBackupWifi()">Salvar Reserva</button>
+            </div>
+            <div id="backup-msg"></div>
+        </div>
     </div>
 
     <!-- Hotspot -->
@@ -204,10 +237,11 @@ async function scanWifi() {
 
     try {
         const d = await get('/api/wifi/scan');
+        const cached = d.cached ? '<div class="msg msg-warn" style="margin-bottom:10px;">⚠️ Hotspot ativo — redes do último scan. Para atualizar, desligue o hotspot primeiro.</div>' : '';
         if (!d.networks || d.networks.length === 0) {
-            list.innerHTML = '<div class="empty">Nenhuma rede Wi-Fi encontrada.</div>';
+            list.innerHTML = cached + '<div class="empty">Nenhuma rede Wi-Fi encontrada.</div>';
         } else {
-            list.innerHTML = '<div class="network-list">' +
+            list.innerHTML = cached + '<div class="network-list">' +
                 d.networks.map(n => `
                     <div class="network-item ${n.ssid === currentSsid ? 'current-net' : ''}" onclick="openModal('${esc(n.ssid)}', ${n.signal})">
                         <div>
@@ -228,6 +262,71 @@ async function scanWifi() {
         list.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
     } finally {
         btn.disabled = false; btn.textContent = 'Escanear Redes';
+    }
+}
+
+async function connectManual() {
+    const ssid     = document.getElementById('manual-ssid').value.trim();
+    const password = document.getElementById('manual-password').value;
+    const btn = document.getElementById('btn-manual-connect');
+    const msg = document.getElementById('manual-msg');
+    if (!ssid) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">SSID obrigatório.</div>'; return; }
+    btn.disabled = true; btn.textContent = 'Conectando...';
+    msg.innerHTML = '';
+    try {
+        const r = await fetch('/api/wifi/connect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ssid, password })
+        });
+        const d = await r.json();
+        if (d.ok) {
+            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:8px;">✓ ${d.message}<br><small>Reconecte ao Wi-Fi "${esc(ssid)}" e acesse o painel novamente.</small></div>`;
+            btn.textContent = 'Conectado!';
+            loadWifiCurrent();
+        } else {
+            msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}</div>`;
+            btn.disabled = false; btn.textContent = 'Conectar';
+        }
+    } catch(e) {
+        msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`;
+        btn.disabled = false; btn.textContent = 'Conectar';
+    }
+}
+
+async function loadBackupWifi() {
+    try {
+        const d = await get('/api/wifi/backup');
+        const el = document.getElementById('backup-status');
+        if (d.configured) {
+            el.innerHTML = `<span style="color:#065f46;font-weight:600;">✓ Configurada:</span> ${esc(d.ssid)} <span style="color:#999;font-size:12px;">— se a internet cair por 3 min, o Pi troca automaticamente</span>`;
+            document.getElementById('backup-ssid').value = d.ssid;
+        } else {
+            el.textContent = 'Nenhuma rede reserva configurada.';
+        }
+    } catch {}
+}
+
+async function saveBackupWifi() {
+    const ssid     = document.getElementById('backup-ssid').value.trim();
+    const password = document.getElementById('backup-password').value;
+    const msg = document.getElementById('backup-msg');
+    if (!ssid) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">SSID obrigatório.</div>'; return; }
+    try {
+        const r = await fetch('/api/wifi/backup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ssid, password })
+        });
+        const d = await r.json();
+        if (d.ok) {
+            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:8px;">✓ Rede reserva "${esc(d.ssid)}" salva.</div>`;
+            loadBackupWifi();
+        } else {
+            msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}</div>`;
+        }
+    } catch(e) {
+        msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`;
     }
 }
 
@@ -380,7 +479,7 @@ async function startHotspot() {
         });
         const d = await r.json();
         if (d.ok) {
-            msg.innerHTML = `<div class="msg msg-ok">✓ Hotspot "<b>${d.ssid}</b>" ativo · Senha: <b>${d.password}</b><br><small>Conecte outro dispositivo a esta rede para acessar o painel em http://10.42.0.1:8000</small></div>`;
+            msg.innerHTML = `<div class="msg msg-ok">✓ Hotspot "<b>${d.ssid}</b>" ativo · Senha: <b>${d.password}</b><br><small>Conecte outro dispositivo a esta rede para acessar o painel em http://192.168.4.1:8000</small></div>`;
             loadHotspotStatus();
         } else {
             msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`;
@@ -430,6 +529,7 @@ loadStatus();
 loadWifiCurrent();
 loadHotspotStatus();
 loadRegistered();
+loadBackupWifi();
 setInterval(loadStatus, 30000);
 setInterval(loadWifiCurrent, 60000);
 </script>
