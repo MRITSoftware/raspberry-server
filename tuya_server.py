@@ -1926,23 +1926,39 @@ def api_wifi_status():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+def _do_wifi_scan() -> List[Dict]:
+    r = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "yes", sudo=True, timeout=35)
+    networks: List[Dict] = []
+    seen: set = set()
+    for row in _parse_nmcli_terse(r.stdout, 3):
+        ssid, signal, security = row[0], row[1], row[2]
+        if not ssid or ssid in seen:
+            continue
+        seen.add(ssid)
+        networks.append({
+            "ssid": ssid,
+            "signal": int(signal) if signal.isdigit() else 0,
+            "security": security or "Aberta",
+        })
+    networks.sort(key=lambda x: x["signal"], reverse=True)
+    return networks
+
 @app.route("/api/wifi/scan", methods=["GET"])
 def api_wifi_scan():
     try:
-        r = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "yes", sudo=True, timeout=35)
-        networks: List[Dict] = []
-        seen: set = set()
-        for row in _parse_nmcli_terse(r.stdout, 3):
-            ssid, signal, security = row[0], row[1], row[2]
-            if not ssid or ssid in seen:
-                continue
-            seen.add(ssid)
-            networks.append({
-                "ssid": ssid,
-                "signal": int(signal) if signal.isdigit() else 0,
-                "security": security or "Aberta",
-            })
-        networks.sort(key=lambda x: x["signal"], reverse=True)
+        if _hotspot_running():
+            try:
+                with open(WIFI_SCAN_CACHE_PATH) as f:
+                    networks = json.load(f)
+                return jsonify({"networks": networks, "cached": True}), 200
+            except Exception:
+                return jsonify({"networks": [], "cached": True, "error": "Hotspot ativo — escaneie antes de ligar o hotspot"}), 200
+        networks = _do_wifi_scan()
+        try:
+            with open(WIFI_SCAN_CACHE_PATH, "w") as f:
+                json.dump(networks, f)
+        except Exception:
+            pass
         return jsonify({"networks": networks}), 200
     except FileNotFoundError:
         return jsonify({"error": "nmcli não encontrado"}), 501
@@ -1959,6 +1975,13 @@ def api_wifi_connect():
         return jsonify({"ok": False, "error": "SSID obrigatório"}), 400
 
     try:
+        if _hotspot_running():
+            subprocess.run(["sudo", "pkill", "-F", HOTSPOT_PID_PATH], capture_output=True, timeout=5)
+            subprocess.run(["sudo", "pkill", "-F", DNSMASQ_PID_PATH], capture_output=True, timeout=5)
+            subprocess.run(["sudo", "ip", "addr", "flush", "dev", "wlan0"], capture_output=True, timeout=5)
+            subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "yes"], capture_output=True, timeout=10)
+            time.sleep(2)
+
         args = ["device", "wifi", "connect", ssid]
         if password:
             args += ["password", password]
@@ -1974,10 +1997,11 @@ def api_wifi_connect():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-HOTSPOT_CONF_PATH  = "/tmp/mrit-hostapd.conf"
-HOTSPOT_PID_PATH   = "/tmp/mrit-hostapd.pid"
-DNSMASQ_CONF_PATH  = "/tmp/mrit-dnsmasq.conf"
-DNSMASQ_PID_PATH   = "/tmp/mrit-dnsmasq.pid"
+HOTSPOT_CONF_PATH   = "/tmp/mrit-hostapd.conf"
+HOTSPOT_PID_PATH    = "/tmp/mrit-hostapd.pid"
+DNSMASQ_CONF_PATH   = "/tmp/mrit-dnsmasq.conf"
+DNSMASQ_PID_PATH    = "/tmp/mrit-dnsmasq.pid"
+WIFI_SCAN_CACHE_PATH = "/tmp/mrit-wifi-scan.json"
 
 def _hotspot_running() -> bool:
     r = subprocess.run(["pgrep", "-F", HOTSPOT_PID_PATH], capture_output=True)
@@ -1996,6 +2020,14 @@ def api_hotspot_start():
         return jsonify({"ok": False, "error": "Senha precisa ter pelo menos 8 caracteres"}), 400
 
     try:
+        # Escanear redes antes de desconectar wlan0 e salvar cache
+        try:
+            networks = _do_wifi_scan()
+            with open(WIFI_SCAN_CACHE_PATH, "w") as f:
+                json.dump(networks, f)
+        except Exception:
+            pass
+
         # Parar instâncias anteriores
         subprocess.run(["sudo", "pkill", "-F", HOTSPOT_PID_PATH],  capture_output=True)
         subprocess.run(["sudo", "pkill", "-F", DNSMASQ_PID_PATH],  capture_output=True)
