@@ -2119,8 +2119,8 @@ def _send_server_heartbeat():
         log(f"[HEARTBEAT] Erro: {e}")
 
 def _server_heartbeat_loop():
-    """Envia heartbeat periódico a cada 15 minutos."""
-    time.sleep(60)  # aguarda 1 min após o boot antes do primeiro envio
+    """Envia heartbeat periódico a cada 15 minutos. Primeiro ping logo no boot."""
+    time.sleep(10)  # pequena espera para o servidor subir completamente
     _send_server_heartbeat()
     while True:
         time.sleep(15 * 60)
