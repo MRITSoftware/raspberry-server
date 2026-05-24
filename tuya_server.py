@@ -2950,3 +2950,6 @@ def start_server(host="0.0.0.0", port=8000):
     # Escutar comandos remotos em tempo real sem polling REST contínuo
     start_remote_command_listener()
     app.run(host=host, port=port, debug=False, use_reloader=False)
+
+if __name__ == "__main__":
+    start_server()
