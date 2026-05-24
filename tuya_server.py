@@ -1929,7 +1929,7 @@ def api_wifi_status():
 @app.route("/api/wifi/scan", methods=["GET"])
 def api_wifi_scan():
     try:
-        r = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "yes", timeout=35)
+        r = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "yes", sudo=True, timeout=35)
         networks: List[Dict] = []
         seen: set = set()
         for row in _parse_nmcli_terse(r.stdout, 3):
