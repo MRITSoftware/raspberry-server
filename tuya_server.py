@@ -1990,11 +1990,39 @@ def api_wifi_connect():
         return jsonify({"ok": False, "error": "SSID obrigatório"}), 400
 
     was_hotspot = _hotspot_running()
-    try:
-        if was_hotspot:
+
+    if was_hotspot:
+        # Em modo hotspot: dispara em background para responder ANTES de derrubar o AP.
+        # O cliente recebe a resposta enquanto o hotspot ainda está no ar, depois o AP cai.
+        def _do_connect_bg():
+            time.sleep(0.8)  # garante que a resposta HTTP foi entregue ao cliente
             _stop_hotspot_internal()
             time.sleep(1)
+            try:
+                args = ["device", "wifi", "connect", ssid]
+                if password:
+                    args += ["password", password]
+                r = _nmcli(*args, sudo=True, timeout=45)
+                if r.returncode == 0:
+                    log(f"[WIFI] Conectado a {ssid} (via hotspot)")
+                else:
+                    log(f"[WIFI] Falha ao conectar a {ssid}: {(r.stderr or r.stdout).strip()}")
+                    log("[WIFI] Restaurando hotspot")
+                    _start_hotspot_internal()
+            except Exception as ex:
+                log(f"[WIFI] Erro ao conectar (bg): {ex}")
+                _start_hotspot_internal()
 
+        threading.Thread(target=_do_connect_bg, daemon=True).start()
+        return jsonify({
+            "ok": True,
+            "async": True,
+            "ssid": ssid,
+            "message": f"Tentando conectar a '{ssid}'..."
+        }), 200
+
+    # Sem hotspot: conexão síncrona normal
+    try:
         args = ["device", "wifi", "connect", ssid]
         if password:
             args += ["password", password]
@@ -2002,21 +2030,13 @@ def api_wifi_connect():
         if r.returncode == 0:
             log(f"[WIFI] Conectado a {ssid}")
             return jsonify({"ok": True, "message": f"Conectado a '{ssid}'"}), 200
-
         err = (r.stderr or r.stdout).strip()
         log(f"[WIFI] Falha ao conectar a {ssid}: {err}")
-        if was_hotspot:
-            log("[WIFI] Restaurando hotspot após falha na conexão")
-            _start_hotspot_internal()
-        return jsonify({"ok": False, "error": err, "hotspot_restored": was_hotspot}), 500
+        return jsonify({"ok": False, "error": err}), 500
     except subprocess.TimeoutExpired:
-        if was_hotspot:
-            _start_hotspot_internal()
-        return jsonify({"ok": False, "error": "Timeout — verifique a senha e tente novamente", "hotspot_restored": was_hotspot}), 500
+        return jsonify({"ok": False, "error": "Timeout — verifique a senha e tente novamente"}), 500
     except Exception as e:
-        if was_hotspot:
-            _start_hotspot_internal()
-        return jsonify({"ok": False, "error": str(e), "hotspot_restored": was_hotspot}), 500
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/api/wifi/backup", methods=["GET"])
 def api_wifi_backup_get():

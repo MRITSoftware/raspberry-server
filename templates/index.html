@@ -280,15 +280,15 @@ async function connectManual() {
             body: JSON.stringify({ ssid, password })
         });
         const d = await r.json();
-        if (d.ok) {
+        if (d.ok && d.async) {
+            showConnectingScreen(ssid);
+        } else if (d.ok) {
             msg.innerHTML = `<div class="msg msg-ok" style="margin-top:8px;">✓ ${d.message}<br><small>Reconecte ao Wi-Fi "${esc(ssid)}" e acesse o painel novamente.</small></div>`;
             btn.textContent = 'Conectado!';
             loadWifiCurrent();
         } else {
-            const extra = d.hotspot_restored ? '<br><small>⚠️ Hotspot restaurado — você ainda está conectado. Tente novamente.</small>' : '';
-            msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}${extra}</div>`;
+            msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}</div>`;
             btn.disabled = false; btn.textContent = 'Conectar';
-            if (d.hotspot_restored) loadHotspotStatus();
         }
     } catch(e) {
         msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`;
@@ -362,15 +362,15 @@ async function connectWifi() {
             body: JSON.stringify({ ssid: selectedSsid, password })
         });
         const d = await r.json();
-        if (d.ok) {
+        if (d.ok && d.async) {
+            showConnectingScreen(selectedSsid);
+        } else if (d.ok) {
             msg.innerHTML = `<div class="msg msg-ok" style="margin-top:10px;">✓ ${d.message}<br><small>Reconecte ao Wi-Fi "${esc(selectedSsid)}" e acesse o painel novamente.</small></div>`;
             btn.textContent = 'Conectado!';
             loadWifiCurrent();
         } else {
-            const extra = d.hotspot_restored ? '<br><small>⚠️ Hotspot restaurado — você ainda está conectado. Tente novamente com a senha correta.</small>' : '';
-            msg.innerHTML = `<div class="msg msg-err" style="margin-top:10px;">Erro: ${d.error}${extra}</div>`;
+            msg.innerHTML = `<div class="msg msg-err" style="margin-top:10px;">Erro: ${d.error}</div>`;
             btn.disabled = false; btn.textContent = 'Tentar novamente';
-            if (d.hotspot_restored) loadHotspotStatus();
         }
     } catch(e) {
         msg.innerHTML = `<div class="msg msg-err" style="margin-top:10px;">Erro de conexão: ${e.message}</div>`;
@@ -513,6 +513,43 @@ async function stopHotspot() {
         msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
         btn.disabled = false; btn.textContent = 'Desligar Hotspot';
     }
+}
+
+// ── Tela de espera pós-conexão via hotspot ────────────
+function showConnectingScreen(ssid) {
+    closeModal();
+    document.getElementById('wifi-modal').classList.remove('open');
+
+    // Sobrepõe a página inteira com a tela de espera
+    const overlay = document.createElement('div');
+    overlay.id = 'connect-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:#1a1a2e;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;padding:24px;text-align:center;';
+
+    let secs = 45;
+    overlay.innerHTML = `
+        <div style="font-size:48px;margin-bottom:16px;">📶</div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:8px;">Conectando a "${esc(ssid)}"</div>
+        <div style="font-size:14px;color:#aaa;margin-bottom:28px;">aguarde até <span id="oc-secs">${secs}</span> segundos...</div>
+        <div style="background:#ffffff18;border-radius:14px;padding:20px 24px;max-width:380px;text-align:left;line-height:1.8;font-size:14px;">
+            <b>O que vai acontecer:</b><br>
+            • O hotspot <b>MRIT-Setup</b> vai desligar<br>
+            • O Pi vai conectar ao Wi-Fi <b>"${esc(ssid)}"</b><br>
+            • Reconecte seu celular/notebook ao <b>"${esc(ssid)}"</b><br>
+            • Abra o roteador e veja qual IP o <b>mrit-pi</b> recebeu<br>
+            • Se o hotspot voltar, a senha estava errada — tente de novo
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const timer = setInterval(() => {
+        secs--;
+        const el = document.getElementById('oc-secs');
+        if (el) el.textContent = secs;
+        if (secs <= 0) {
+            clearInterval(timer);
+            overlay.querySelector('div:nth-child(3)').textContent = 'Se o hotspot voltou, a senha estava errada. Conecte ao MRIT-Setup e tente de novo.';
+        }
+    }, 1000);
 }
 
 // ── Helpers ───────────────────────────────────────────
