@@ -2825,6 +2825,21 @@ def execute_remote_command_action(record: Dict[str, Any]) -> Dict[str, Any]:
     if action == "test":
         return run_remote_system_test(record)
 
+    if action == "restart":
+        log("[REMOTE] Comando restart recebido — reiniciando serviço em 4s")
+        def _do_restart():
+            time.sleep(4)
+            subprocess.Popen(["sudo", "systemctl", "restart", "mrit-server"])
+        threading.Thread(target=_do_restart, daemon=True).start()
+        return {"message": "Serviço reiniciando em 4 segundos..."}
+
+    if action == "logs":
+        r = subprocess.run(
+            ["sudo", "journalctl", "-u", "mrit-server", "-n100", "--no-pager", "--output=short"],
+            capture_output=True, text=True, timeout=10
+        )
+        return {"logs": r.stdout[-4000:]}
+
     raise ValueError(f"Ação remota inválida: {action}")
 
 def get_supabase_realtime_url() -> str:
