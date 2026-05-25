@@ -87,7 +87,7 @@ COMMAND_PREFLIGHT_TIMEOUT_SECONDS = 8
 COMMAND_ACTION_TIMEOUT_SECONDS = 20
 REFRESH_FAIL_COUNTS: Dict[str, int] = {}
 REFRESH_LAST_STATUS: Dict[str, bool] = {}
-APP_VERSION = "1.0"
+APP_VERSION = "1.0-PI"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -1005,7 +1005,21 @@ def update_device_heartbeat(
         
         update_data: Dict[str, Any] = {}
         update_data["versao"] = APP_VERSION
-        
+
+        # Wi-Fi SSID atual
+        try:
+            r_nm = subprocess.run(
+                ["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in r_nm.stdout.splitlines():
+                parts = line.split(":")
+                if parts and parts[0].lower() == "yes" and len(parts) > 1 and parts[1]:
+                    update_data["wifi_ssid"] = parts[1]
+                    break
+        except Exception:
+            pass
+
         # Atualizar servidor_online apenas se considerarmos o device online
         if (not lan_ip or not local_key) or device_online:
             update_data["servidor_online"] = timestamp_iso
@@ -3233,7 +3247,12 @@ def api_register_single_device():
             action = "cadastrado"
 
         # Salvar no cache local
-        save_device_to_cache(device_id, {"lan_ip": lan_ip, "local_key": local_key or "", "version": version or ""})
+        save_device_to_cache(
+            tuya_device_id=device_id,
+            local_key=local_key or "",
+            lan_ip=lan_ip,
+            version=float(version) if version else None
+        )
 
         log(f"[REGISTER] Device {device_id} {action} para site_id={site_id}")
         return jsonify({"ok": ok, "action": action, "device_id": device_id, "site_id": site_id}), 200
