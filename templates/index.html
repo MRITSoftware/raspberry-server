@@ -248,8 +248,9 @@
             <div class="metric"><div class="metric-val" id="m-uptime">—</div><div class="metric-label">Uptime</div></div>
         </div>
         <div class="actions" style="margin-bottom:16px;">
-            <button class="btn btn-ghost" id="btn-restart-svc" onclick="restartService()">↺ Reiniciar Serviço</button>
-            <button class="btn btn-warn"  id="btn-reboot"      onclick="confirmReboot()">⏻ Reiniciar Pi</button>
+            <button class="btn btn-ghost"    id="btn-restart-svc"  onclick="restartService()">↺ Reiniciar Serviço</button>
+            <button class="btn btn-warn"     id="btn-reboot"       onclick="confirmReboot()">⏻ Reiniciar Pi</button>
+            <button class="btn btn-primary"  id="btn-heartbeat-now" onclick="sendHeartbeatNow()">⬆ Enviar Agora</button>
         </div>
         <div id="sys-msg"></div>
         <hr class="section-divider">
@@ -373,6 +374,18 @@ async function doReboot() {
         await fetch('/api/system/reboot', { method: 'POST' });
         msg.innerHTML = '<div class="msg msg-warn">⏻ Reiniciando Pi... aguarde ~30 segundos e recarregue a página.</div>';
     } catch {}
+}
+
+async function sendHeartbeatNow() {
+    const btn = document.getElementById('btn-heartbeat-now');
+    const msg = document.getElementById('sys-msg');
+    btn.disabled = true; btn.textContent = '⬆ Enviando...';
+    try {
+        const d = await fetch('/api/system/heartbeat-now', { method: 'POST' }).then(r => r.json());
+        msg.innerHTML = `<div class="msg msg-ok">${d.message}</div>`;
+        setTimeout(() => loadSystemHealth(), 35000);
+    } catch(e) { msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`; }
+    setTimeout(() => { btn.disabled = false; btn.textContent = '⬆ Enviar Agora'; }, 35000);
 }
 
 async function loadLogs() {

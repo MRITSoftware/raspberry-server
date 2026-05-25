@@ -3627,6 +3627,11 @@ def api_system_reboot():
     subprocess.Popen(["sudo", "reboot"])
     return jsonify({"ok": True, "message": "Reiniciando Pi..."}), 200
 
+@app.route("/api/system/heartbeat-now", methods=["POST"])
+def api_system_heartbeat_now():
+    threading.Thread(target=_send_server_heartbeat, daemon=True).start()
+    return jsonify({"ok": True, "message": "Heartbeat disparado — logs em ~30 segundos"}), 200
+
 @app.route("/api/system/logs", methods=["GET"])
 def api_system_logs():
     n = min(int(request.args.get("lines", 80)), 200)
