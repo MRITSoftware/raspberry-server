@@ -61,7 +61,7 @@ sudo systemctl enable mrit-server
 sudo systemctl start mrit-server
 
 # Instalar hostapd e dnsmasq para hotspot
-sudo apt-get install -y hostapd dnsmasq -qq
+sudo apt-get install -y hostapd dnsmasq iptables-persistent -qq
 sudo systemctl stop hostapd dnsmasq 2>/dev/null || true
 sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
 
@@ -69,13 +69,20 @@ sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
 echo "${CURRENT_USER} ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/mrit-server > /dev/null
 sudo chmod 440 /etc/sudoers.d/mrit-server
 
+# Redirecionar porta 80 → 8000 (acesso sem :8000 na URL)
+sudo iptables -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8000 2>/dev/null || \
+    sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8000
+sudo iptables -t nat -C OUTPUT -p tcp -o lo --dport 80 -j REDIRECT --to-port 8000 2>/dev/null || \
+    sudo iptables -t nat -A OUTPUT -p tcp -o lo --dport 80 -j REDIRECT --to-port 8000
+sudo netfilter-persistent save -q 2>/dev/null || true
+
 echo "      Serviço instalado e iniciado."
 
 # Verificar se subiu
 echo "[4/4] Verificando servidor..."
 sleep 3
 if curl -s http://localhost:8000/health > /dev/null; then
-    echo "      Servidor respondendo em http://localhost:8000/health"
+    echo "      Servidor respondendo em http://$(hostname).local"
 else
     echo "      Servidor ainda iniciando. Verifique com: sudo journalctl -u mrit-server -f"
 fi
@@ -87,4 +94,4 @@ echo "Comandos úteis:"
 echo "  sudo systemctl status mrit-server      — status do serviço"
 echo "  sudo journalctl -u mrit-server -f      — logs em tempo real"
 echo "  sudo systemctl restart mrit-server     — reiniciar após mudanças no .env"
-echo "  curl http://localhost:8000/health       — testar se está rodando"
+echo "  curl http://localhost/health            — testar se está rodando"
