@@ -159,7 +159,7 @@
         <div class="card-header"><span class="card-title">Status do Sistema</span></div>
         <div class="status-grid">
             <div class="status-item"><div class="status-label">Servidor</div><div class="status-value" id="st-server"><span class="spinner"></span></div></div>
-            <div class="status-item"><div class="status-label">Supabase</div><div class="status-value" id="st-supabase"><span class="spinner"></span></div></div>
+            <div class="status-item"><div class="status-label">Servidor</div><div class="status-value" id="st-banco"><span class="spinner"></span></div></div>
             <div class="status-item"><div class="status-label">Realtime</div><div class="status-value" id="st-realtime"><span class="spinner"></span></div></div>
             <div class="status-item"><div class="status-label">Plaquinha</div><div class="status-value" id="st-devices"><span class="spinner"></span></div></div>
         </div>
@@ -316,7 +316,7 @@ async function loadStatus() {
         const d = await get('/api/status');
         document.getElementById('header-site').textContent = d.site || '—';
         set('st-server',   dot('green') + 'Online');
-        set('st-supabase', d.supabase_configured ? dot('green') + 'OK' : dot('red') + 'Não configurado');
+        set('st-banco', d.db_configured ? dot('green') + 'OK' : dot('red') + 'Não configurado');
         set('st-realtime', d.realtime_connected   ? dot('green') + 'Conectado' : dot('yellow') + 'Conectando...');
         const inDb = d.devices_in_db;
         if (inDb === 0) {

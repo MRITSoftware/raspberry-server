@@ -31,7 +31,7 @@ def mask_local_key(local_key: Optional[str], visible_chars: int = 8) -> str:
         return "*" * len(local_key)
     return local_key[:visible_chars] + "*" * (len(local_key) - visible_chars)
 
-# Usar requests para chamadas HTTP diretas ao Supabase
+# Usar requests para chamadas HTTP diretas ao banco
 # Isso evita dependências problemáticas como pydantic-core
 try:
     import requests
@@ -59,7 +59,7 @@ except ImportError:
 # CONFIG & AUTO-SETUP
 # =========================
 
-# Valores padrão do Supabase (configuração interna)
+# Valores padrão do banco (configuração interna)
 DEFAULT_SUPABASE_URL = "https://kihyhoqbrkwbfudttevo.supabase.co"
 DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtpaHlob3Ficmt3YmZ1ZHR0ZXZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTU1NTUwMjcsImV4cCI6MjAzMTEzMTAyN30.XtBTlSiqhsuUIKmhAMEyxofV-dRst7240n912m4O4Us"
 
@@ -109,7 +109,7 @@ def load_config_from_env() -> Dict[str, Any]:
     """Carrega configurações de variáveis de ambiente."""
     config = {}
     
-    # Supabase
+    # Banco
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_anon_key = os.getenv("SUPABASE_ANON_KEY")
     if supabase_url and supabase_anon_key:
@@ -157,7 +157,7 @@ def create_config_if_needed():
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=4, ensure_ascii=False)
         
-        log(f"[OK] config.json criado com site_name = {site} e configuração do Supabase")
+        log(f"[OK] config.json criado com site_name = {site} e configuração do banco")
 
 def update_site_name(new_name: str):
     """Atualiza o nome do site no config.json"""
@@ -178,7 +178,7 @@ def update_site_name(new_name: str):
     log(f"[OK] site_name atualizado para = {new_name}")
 
 def update_supabase_config(url: str, anon_key: str):
-    """Atualiza a configuração do Supabase no config.json"""
+    """Atualiza a configuração do banco no config.json"""
     # Carregar config existente
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -197,7 +197,7 @@ def update_supabase_config(url: str, anon_key: str):
     # Atualizar variável global
     global SUPABASE_CONFIG
     SUPABASE_CONFIG = cfg["supabase"]
-    log(f"[OK] Configuração do Supabase atualizada")
+    log(f"[OK] Configuração do banco atualizada")
 
 def update_tuya_accounts(accounts: List[Dict[str, str]]):
     """Atualiza as contas Tuya no config.json"""
@@ -265,7 +265,7 @@ if not SUPABASE_CONFIG.get("url") and env_config.get("supabase"):
     cfg["supabase"] = SUPABASE_CONFIG
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=4, ensure_ascii=False)
-    log("[INFO] Supabase configurado automaticamente a partir de variáveis de ambiente")
+    log("[INFO] Banco configurado automaticamente a partir de variáveis de ambiente")
 
 if not TUYA_ACCOUNTS and env_config.get("tuya_accounts"):
     TUYA_ACCOUNTS = env_config["tuya_accounts"]
@@ -324,7 +324,7 @@ if not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=4, ensure_ascii=False)
     
-    log("[INFO] Configuração do Supabase inicializada com valores padrão internos")
+    log("[INFO] Configuração do banco inicializada com valores padrão internos")
 
 # Se ainda não há contas Tuya configuradas, usar valores padrão internos
 if not TUYA_ACCOUNTS:
@@ -345,22 +345,22 @@ if not TUYA_ACCOUNTS:
 log(f"[INFO] Servidor local iniciado para SITE = {SITE_NAME}")
 
 # =========================
-# DATABASE (SUPABASE)
+# DATABASE
 # =========================
 
 HEARTBEAT_LOG_TABLE = "tuya_heartbeat_logs"
 PENDING_HEARTBEAT_LOGS_LOCK = threading.Lock()
 
 def get_supabase_headers():
-    """Retorna headers para requisições ao Supabase."""
+    """Retorna headers para requisições ao banco."""
     if not REQUESTS_AVAILABLE:
         raise RuntimeError("requests não está disponível")
-    
+
     url = SUPABASE_CONFIG.get("url")
     anon_key = SUPABASE_CONFIG.get("anon_key")
-    
+
     if not url or not anon_key:
-        raise RuntimeError("Configuração do Supabase não encontrada (url ou anon_key faltando)")
+        raise RuntimeError("Configuração do banco não encontrada (url ou anon_key faltando)")
     
     return {
         "apikey": anon_key,
@@ -370,10 +370,10 @@ def get_supabase_headers():
     }
 
 def get_supabase_url():
-    """Retorna a URL base do Supabase."""
+    """Retorna a URL base do banco."""
     url = SUPABASE_CONFIG.get("url")
     if not url:
-        raise RuntimeError("URL do Supabase não configurada")
+        raise RuntimeError("URL do banco não configurada")
     # Garantir que a URL termina com /rest/v1
     # Remover barra final se existir
     url = url.rstrip("/")
@@ -401,7 +401,7 @@ def get_devices_from_db(tuya_device_ids: List[str]) -> Dict[str, Dict]:
             headers = get_supabase_headers()
             
             # Usar requests com params para URL encoding correto
-            # Supabase PostgREST usa formato: tuya_device_id=in.(id1,id2,id3)
+            # PostgREST usa formato: tuya_device_id=in.(id1,id2,id3)
             # Construir a query string corretamente com URL encoding
             ids_list = ",".join(tuya_device_ids)
             params = {
@@ -519,7 +519,7 @@ def update_device_by_id_in_db(
         return False
     
     if not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
-        log(f"[DB] Configuração do Supabase não encontrada. URL: {SUPABASE_CONFIG.get('url')}, Key: {'presente' if SUPABASE_CONFIG.get('anon_key') else 'ausente'}")
+        log(f"[DB] Banco não configurado. URL: {SUPABASE_CONFIG.get('url')}, Key: {'presente' if SUPABASE_CONFIG.get('anon_key') else 'ausente'}")
         return False
     
     try:
@@ -598,7 +598,7 @@ def enqueue_pending_heartbeat_log(payload: Dict[str, Any]) -> bool:
         return False
 
 def send_heartbeat_log_payload(payload: Dict[str, Any]) -> bool:
-    """Envia payload de log para o Supabase mantendo o event_time original."""
+    """Envia payload de log para o banco mantendo o event_time original."""
     if not REQUESTS_AVAILABLE:
         return False
     if not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
@@ -700,7 +700,7 @@ def create_device_in_db(
         return False
     
     if not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
-        log(f"[DB] Configuração do Supabase não encontrada. URL: {SUPABASE_CONFIG.get('url')}, Key: {'presente' if SUPABASE_CONFIG.get('anon_key') else 'ausente'}")
+        log(f"[DB] Banco não configurado. URL: {SUPABASE_CONFIG.get('url')}, Key: {'presente' if SUPABASE_CONFIG.get('anon_key') else 'ausente'}")
         return False
     
     try:
@@ -747,7 +747,7 @@ def create_device_in_db(
         if protocol_version is not None:
             device_data['protocol_version'] = protocol_version
         
-        # Criar usando Supabase REST API
+        # Criar via REST API
         url = f"{base_url}/tuya_devices"
         
         # Retry para lidar com internet lenta
@@ -906,7 +906,7 @@ def update_device_heartbeat(
         return False
     
     if not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
-        log(f"[DB] Configuração do Supabase não encontrada. URL: {SUPABASE_CONFIG.get('url')}, Key: {'presente' if SUPABASE_CONFIG.get('anon_key') else 'ausente'}")
+        log(f"[DB] Banco não configurado. URL: {SUPABASE_CONFIG.get('url')}, Key: {'presente' if SUPABASE_CONFIG.get('anon_key') else 'ausente'}")
         return False
     
     try:
@@ -1097,7 +1097,7 @@ def update_device_heartbeat(
                     log(f"[HEARTBEAT] servidor_online atualizado com sucesso para device {tuya_device_id} (status: {response.status_code}, placa online: {device_online})")
                     return True
                 else:
-                    log(f"[HEARTBEAT] Resposta inesperada do Supabase: {response.status_code}")
+                    log(f"[HEARTBEAT] Resposta inesperada do banco: {response.status_code}")
                     return False
                     
             except requests.exceptions.Timeout as e:
@@ -1158,7 +1158,7 @@ def update_device_in_db(
         return False
     
     if not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
-        log(f"[DB] Configuração do Supabase não encontrada. URL: {SUPABASE_CONFIG.get('url')}, Key: {'presente' if SUPABASE_CONFIG.get('anon_key') else 'ausente'}")
+        log(f"[DB] Banco não configurado. URL: {SUPABASE_CONFIG.get('url')}, Key: {'presente' if SUPABASE_CONFIG.get('anon_key') else 'ausente'}")
         return False
     
     try:
@@ -1190,8 +1190,7 @@ def update_device_in_db(
             log(f"[DB] Nenhum dado para atualizar para device {tuya_device_id}")
             return False
         
-        # Atualizar usando Supabase REST API
-        # Supabase usa formato: /rest/v1/tuya_devices?tuya_device_id=eq.{id}
+        # Atualizar via REST API
         url = f"{base_url}/tuya_devices?tuya_device_id=eq.{tuya_device_id}"
         
         # Retry para lidar com internet lenta
@@ -1545,7 +1544,7 @@ def recadastrar_device(
     """
     Faz um recadastro leve do device:
     - escaneia a LAN para achar IP/protocolo,
-    - atualiza/cria no Supabase usando o mesmo site_id,
+    - atualiza/cria no banco usando o mesmo site_id,
     - atualiza o cache local.
     Retorna o lan_ip encontrado (se houver).
     """
@@ -1939,7 +1938,7 @@ def api_status():
     return jsonify({
         "site": SITE_NAME,
         "version": APP_VERSION,
-        "supabase_configured": bool(SUPABASE_CONFIG.get("url") and SUPABASE_CONFIG.get("anon_key")),
+        "db_configured": bool(SUPABASE_CONFIG.get("url") and SUPABASE_CONFIG.get("anon_key")),
         "realtime_connected": REMOTE_COMMAND_WS_APP is not None,
         "devices_cached": len(device_ids),
         "devices_in_db": devices_in_db,
@@ -1964,7 +1963,7 @@ def api_devices_cached():
 
 @app.route("/api/devices/<device_id>", methods=["DELETE"])
 def api_device_delete(device_id: str):
-    """Remove dispositivo do cache local e do banco Supabase."""
+    """Remove dispositivo do cache local e do banco."""
     errors = []
 
     # Remove do cache local
@@ -1983,16 +1982,16 @@ def api_device_delete(device_id: str):
     except Exception as e:
         errors.append(f"cache: {e}")
 
-    # Remove do Supabase
+    # Remove do banco
     try:
         base_url = get_supabase_url()
         headers = get_supabase_headers()
         url = f"{base_url}/tuya_devices?tuya_device_id=eq.{device_id}&site_id=eq.{SITE_NAME}"
         r = requests.delete(url, headers=headers, timeout=10)
         if r.status_code not in (200, 204):
-            errors.append(f"supabase: {r.status_code}")
+            errors.append(f"banco: {r.status_code}")
     except Exception as e:
-        errors.append(f"supabase: {e}")
+        errors.append(f"banco: {e}")
 
     log(f"[DEVICE] Removido: {device_id}" + (f" (erros: {errors})" if errors else ""))
     return jsonify({"ok": True, "id": device_id, "errors": errors}), 200
@@ -2401,17 +2400,13 @@ def api_config_tuya():
         traceback.print_exc()
         return jsonify({"ok": False, "error": err}), 500
 
-@app.route("/config/supabase", methods=["POST"])
+@app.route("/config/db", methods=["POST"])
 def api_config_supabase():
     """
-    Configura as credenciais do Supabase.
+    Configura as credenciais do banco.
     Requer header X-ADMIN-TOKEN.
-    
-    Body:
-    {
-        "url": "https://kihyhoqbrkwbfudttevo.supabase.co",
-        "anon_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-    }
+
+    Body: { "url": "...", "anon_key": "..." }
     """
     # Validar token de admin
     if not validate_admin_token():
@@ -2435,12 +2430,12 @@ def api_config_supabase():
         
         return jsonify({
             "ok": True,
-            "message": "Configuração do Supabase atualizada com sucesso"
+            "message": "Configuração do banco atualizada com sucesso"
         }), 200
-        
+
     except Exception as e:
         err = str(e)
-        log(f"[ERRO] API /config/supabase: {err}")
+        log(f"[ERRO] API /config/db: {err}")
         traceback.print_exc()
         return jsonify({"ok": False, "error": err}), 500
 
@@ -2687,7 +2682,7 @@ def run_remote_system_test(record: Dict[str, Any]) -> Dict[str, Any]:
 
     checks = {
         "server_running": True,
-        "supabase_configured": bool(SUPABASE_CONFIG.get("url") and SUPABASE_CONFIG.get("anon_key")),
+        "db_configured": bool(SUPABASE_CONFIG.get("url") and SUPABASE_CONFIG.get("anon_key")),
         "device_found_in_db": bool(db_device),
         "device_found_in_cache": bool(cache_device),
         "device_has_lan_ip": bool(lan_ip),
@@ -2746,15 +2741,15 @@ def execute_remote_command_action(record: Dict[str, Any]) -> Dict[str, Any]:
     raise ValueError(f"Ação remota inválida: {action}")
 
 def get_supabase_realtime_url() -> str:
-    """Monta a URL do websocket Realtime a partir da URL base do Supabase."""
+    """Monta a URL do websocket Realtime."""
     supabase_url = SUPABASE_CONFIG.get("url")
     anon_key = SUPABASE_CONFIG.get("anon_key")
     if not supabase_url or not anon_key:
-        raise RuntimeError("Configuração do Supabase não encontrada para Realtime")
+        raise RuntimeError("Banco não configurado para Realtime")
 
     parsed = urlparse(supabase_url)
     if not parsed.scheme or not parsed.netloc:
-        raise RuntimeError("URL do Supabase inválida para Realtime")
+        raise RuntimeError("URL do banco inválida para Realtime")
 
     scheme = "wss" if parsed.scheme == "https" else "ws"
     return f"{scheme}://{parsed.netloc}/realtime/v1/websocket?apikey={anon_key}&vsn=1.0.0"
@@ -2960,7 +2955,7 @@ def process_remote_command_record(record: Dict[str, Any]) -> None:
             update_remote_command_status(command_id, "error", error_message=err)
 
 def handle_remote_realtime_message(message: str) -> None:
-    """Processa mensagens recebidas do websocket Realtime do Supabase."""
+    """Processa mensagens recebidas do websocket Realtime."""
     try:
         payload = json.loads(message)
     except json.JSONDecodeError:
@@ -3007,7 +3002,7 @@ def send_remote_realtime_heartbeat(ws_app: Any) -> None:
             return
 
 def remote_command_listener_loop() -> None:
-    """Mantém uma conexão Realtime com o Supabase para ouvir comandos remotos."""
+    """Mantém uma conexão Realtime para ouvir comandos remotos."""
     if not WEBSOCKET_CLIENT_AVAILABLE:
         log("[REMOTE] Listener em tempo real não iniciado: websocket-client indisponível")
         return
@@ -3032,7 +3027,7 @@ def remote_command_listener_loop() -> None:
                 with REMOTE_COMMAND_WS_LOCK:
                     global REMOTE_COMMAND_WS_APP
                     REMOTE_COMMAND_WS_APP = ws_app
-                log(f"[REMOTE] Conectado ao Realtime do Supabase para site_id={SITE_NAME}")
+                log(f"[REMOTE] Conectado ao Realtime para site_id={SITE_NAME}")
                 ws_app.send(json.dumps({
                     "topic": REMOTE_COMMAND_TOPIC,
                     "event": "phx_join",
