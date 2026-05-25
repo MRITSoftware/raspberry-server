@@ -2236,21 +2236,29 @@ def _collect_system_metrics() -> Dict[str, Any]:
     return metrics
 
 def _log_system_metrics(wifi_speed_mbps: float = 0.0) -> None:
-    """Insere uma linha em pi_system_logs com as métricas atuais do sistema."""
+    """Upsert em pi_system_logs — mantém uma linha por site_id, sempre atualizada."""
     if not REQUESTS_AVAILABLE or not SUPABASE_CONFIG.get("url"):
         return
     try:
         metrics = _collect_system_metrics()
-        payload: Dict[str, Any] = {"site_id": SITE_NAME, "versao": APP_VERSION}
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
+        payload: Dict[str, Any] = {
+            "site_id": SITE_NAME,
+            "versao": APP_VERSION,
+            "logged_at": now_iso,
+        }
         payload.update(metrics)
         if wifi_speed_mbps > 0:
             payload["wifi_speed_mbps"] = wifi_speed_mbps
         base_url = get_supabase_url()
-        headers = get_supabase_headers()
+        headers = {
+            **get_supabase_headers(),
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        }
         r = requests.post(f"{base_url}/pi_system_logs", json=payload, headers=headers, timeout=15)
         r.raise_for_status()
         log(
-            f"[SYSLOG] Métricas registradas — "
+            f"[SYSLOG] Métricas atualizadas — "
             f"temp={metrics.get('temp_c','?')}°C  "
             f"RAM={metrics.get('ram_pct','?')}%  "
             f"disco={metrics.get('disk_pct','?')}%  "
@@ -2258,7 +2266,7 @@ def _log_system_metrics(wifi_speed_mbps: float = 0.0) -> None:
             f"speed={wifi_speed_mbps:.1f} Mbps"
         )
     except Exception as e:
-        log(f"[SYSLOG] Erro ao registrar métricas: {e}")
+        log(f"[SYSLOG] Erro ao atualizar métricas: {e}")
 
 def _send_server_heartbeat():
     """Mede velocidade, pinga cada plaquinha, atualiza servidor_online e loga métricas do sistema."""
