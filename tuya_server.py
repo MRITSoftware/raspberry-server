@@ -2185,8 +2185,83 @@ def _measure_wifi_speed() -> float:
         log(f"[SPEED] Erro ao medir velocidade: {e}")
     return 0.0
 
+def _collect_system_metrics() -> Dict[str, Any]:
+    """Coleta métricas do sistema operacional do Pi."""
+    metrics: Dict[str, Any] = {}
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            metrics["temp_c"] = round(int(f.read().strip()) / 1000, 1)
+    except Exception:
+        pass
+    try:
+        with open("/proc/meminfo") as f:
+            mem: Dict[str, int] = {}
+            for line in f:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    mem[k.strip()] = int(v.strip().split()[0])
+        metrics["ram_pct"] = round(
+            (mem["MemTotal"] - mem["MemAvailable"]) / mem["MemTotal"] * 100, 1
+        )
+    except Exception:
+        pass
+    try:
+        df = subprocess.run(["df", "/"], capture_output=True, text=True, timeout=5)
+        parts = df.stdout.splitlines()[-1].split()
+        metrics["disk_pct"] = float(parts[4].rstrip("%"))
+    except Exception:
+        pass
+    try:
+        with open("/proc/loadavg") as f:
+            metrics["cpu_load"] = float(f.read().split()[0])
+    except Exception:
+        pass
+    try:
+        with open("/proc/uptime") as f:
+            metrics["uptime_seconds"] = int(float(f.read().split()[0]))
+    except Exception:
+        pass
+    try:
+        r_nm = subprocess.run(
+            ["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in r_nm.stdout.splitlines():
+            parts = line.split(":")
+            if parts and parts[0].lower() == "yes" and len(parts) > 1 and parts[1]:
+                metrics["wifi_ssid"] = parts[1]
+                break
+    except Exception:
+        pass
+    return metrics
+
+def _log_system_metrics(wifi_speed_mbps: float = 0.0) -> None:
+    """Insere uma linha em pi_system_logs com as métricas atuais do sistema."""
+    if not REQUESTS_AVAILABLE or not SUPABASE_CONFIG.get("url"):
+        return
+    try:
+        metrics = _collect_system_metrics()
+        payload: Dict[str, Any] = {"site_id": SITE_NAME, "versao": APP_VERSION}
+        payload.update(metrics)
+        if wifi_speed_mbps > 0:
+            payload["wifi_speed_mbps"] = wifi_speed_mbps
+        base_url = get_supabase_url()
+        headers = get_supabase_headers()
+        r = requests.post(f"{base_url}/pi_system_logs", json=payload, headers=headers, timeout=15)
+        r.raise_for_status()
+        log(
+            f"[SYSLOG] Métricas registradas — "
+            f"temp={metrics.get('temp_c','?')}°C  "
+            f"RAM={metrics.get('ram_pct','?')}%  "
+            f"disco={metrics.get('disk_pct','?')}%  "
+            f"load={metrics.get('cpu_load','?')}  "
+            f"speed={wifi_speed_mbps:.1f} Mbps"
+        )
+    except Exception as e:
+        log(f"[SYSLOG] Erro ao registrar métricas: {e}")
+
 def _send_server_heartbeat():
-    """Mede velocidade, pinga cada plaquinha e atualiza servidor_online se ela responder."""
+    """Mede velocidade, pinga cada plaquinha, atualiza servidor_online e loga métricas do sistema."""
     try:
         speed = _measure_wifi_speed()
         cache = load_devices_cache()
@@ -2197,6 +2272,7 @@ def _send_server_heartbeat():
             except Exception as e:
                 log(f"[HEARTBEAT] Erro ao pingar {dev_id}: {e}")
         log(f"[HEARTBEAT] Ping concluído: {len(device_ids)} device(s), speed={speed} Mbps")
+        _log_system_metrics(wifi_speed_mbps=speed)
     except Exception as e:
         log(f"[HEARTBEAT] Erro: {e}")
 
