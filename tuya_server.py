@@ -2162,6 +2162,7 @@ def api_wifi_backup_post():
 
 # ── Monitor de conectividade ──────────────────────────────────────────────────
 _CONNECTIVITY_FAIL_COUNT = 0
+_LAST_SYSLOG_AT: Optional[str] = None
 
 def _check_connectivity() -> bool:
     try:
@@ -2257,6 +2258,8 @@ def _log_system_metrics(wifi_speed_mbps: float = 0.0) -> None:
         }
         r = requests.post(f"{base_url}/pi_system_logs", json=payload, headers=headers, timeout=15)
         r.raise_for_status()
+        global _LAST_SYSLOG_AT
+        _LAST_SYSLOG_AT = now_iso
         log(
             f"[SYSLOG] Métricas atualizadas — "
             f"temp={metrics.get('temp_c','?')}°C  "
@@ -3620,7 +3623,8 @@ def api_system_health():
         return jsonify({
             "load": load_1, "ram_pct": mem_pct,
             "disk_used": disk_used, "disk_total": disk_total, "disk_pct": disk_pct,
-            "temp_c": temp, "uptime": uptime
+            "temp_c": temp, "uptime": uptime,
+            "last_log_at": _LAST_SYSLOG_AT,
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

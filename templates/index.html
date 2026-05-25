@@ -247,6 +247,7 @@
             <div class="metric"><div class="metric-val" id="m-disk">—</div><div class="metric-label">Disco</div></div>
             <div class="metric"><div class="metric-val" id="m-uptime">—</div><div class="metric-label">Uptime</div></div>
         </div>
+        <div id="last-log-at" style="font-size:11px;color:#94a3b8;margin-bottom:14px;"></div>
         <div class="actions" style="margin-bottom:16px;">
             <button class="btn btn-ghost"    id="btn-restart-svc"  onclick="restartService()">↺ Reiniciar Serviço</button>
             <button class="btn btn-warn"     id="btn-reboot"       onclick="confirmReboot()">⏻ Reiniciar Pi</button>
@@ -343,6 +344,13 @@ async function loadSystemHealth() {
         setMetric('m-ram',   r + '%',   r > 85 ? 'danger' : r > 70 ? 'warn' : '');
         setMetric('m-disk',  dk + '%',  dk > 85 ? 'danger' : dk > 70 ? 'warn' : '');
         setMetric('m-uptime', d.uptime || '—', '');
+        const logEl = document.getElementById('last-log-at');
+        if (d.last_log_at) {
+            const dt = new Date(d.last_log_at);
+            logEl.textContent = 'Último envio ao banco: ' + dt.toLocaleString('pt-BR');
+        } else {
+            logEl.textContent = 'Aguardando primeiro envio ao banco...';
+        }
     } catch {}
 }
 
