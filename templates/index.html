@@ -9,14 +9,15 @@
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f1f5f9; color: #0f172a; min-height: 100vh; display: flex; flex-direction: column; }
 
         /* ── Header ── */
-        header { background: #0f172a; color: white; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+        header { background: #0d1f3d; color: white; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 12px rgba(0,0,0,0.35); }
         .header-left { display: flex; align-items: center; gap: 12px; }
-        .header-icon { width: 34px; height: 34px; background: #e94560; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+        .header-logo { width: 36px; height: 36px; background: white; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 3px; flex-shrink: 0; }
+        .header-logo img { width: 100%; height: 100%; object-fit: contain; }
         .header-title { font-size: 16px; font-weight: 800; letter-spacing: 0.5px; }
         .header-right { display: flex; align-items: center; gap: 10px; }
-        .site-pill { background: #1e293b; border: 1px solid #334155; padding: 5px 12px; border-radius: 20px; font-size: 12px; color: #94a3b8; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .btn-logout { background: none; border: 1px solid #334155; color: #64748b; padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all .15s; }
-        .btn-logout:hover { border-color: #e94560; color: #e94560; }
+        .site-pill { background: #162848; border: 1px solid #1e3a5f; padding: 5px 12px; border-radius: 20px; font-size: 12px; color: #94a3b8; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .btn-logout { background: none; border: 1px solid #1e3a5f; color: #64748b; padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all .15s; }
+        .btn-logout:hover { border-color: #2d6dc8; color: #2d6dc8; }
 
         /* ── Layout ── */
         main { flex: 1; max-width: 880px; margin: 0 auto; width: 100%; padding: 20px 16px 40px; }
@@ -46,7 +47,7 @@
         .btn:hover:not(:disabled) { opacity: 0.85; }
         .btn:active:not(:disabled) { transform: scale(0.97); }
         .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-        .btn-primary { background: #0f172a; color: white; }
+        .btn-primary { background: #2d6dc8; color: white; }
         .btn-danger  { background: #e94560; color: white; }
         .btn-success { background: #10b981; color: white; }
         .btn-ghost   { background: #f1f5f9; color: #475569; }
@@ -79,7 +80,7 @@
         .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
         @media(min-width:480px) { .metrics-grid { grid-template-columns: repeat(4, 1fr); } }
         .metric { background: #f8fafc; border-radius: 11px; padding: 12px 10px; text-align: center; }
-        .metric-val { font-size: 20px; font-weight: 800; color: #0f172a; }
+        .metric-val { font-size: 20px; font-weight: 800; color: #0d1f3d; }
         .metric-val.warn { color: #f59e0b; }
         .metric-val.danger { color: #ef4444; }
         .metric-label { font-size: 10px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
@@ -88,7 +89,7 @@
         .field { margin-bottom: 0; }
         .field label { display: block; font-size: 11px; color: #94a3b8; font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
         .field input { width: 100%; padding: 9px 12px; border: 1px solid #e2e8f0; border-radius: 9px; font-size: 13px; outline: none; background: white; transition: border-color .15s; }
-        .field input:focus { border-color: #0f172a; }
+        .field input:focus { border-color: #2d6dc8; }
         .input-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 
         /* ── Messages ── */
@@ -101,14 +102,14 @@
         @keyframes spin { to { transform: rotate(360deg); } }
 
         /* ── Logs ── */
-        .logs-box { background: #0f172a; color: #94a3b8; padding: 14px; border-radius: 10px; font-size: 11px; font-family: monospace; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; line-height: 1.6; }
+        .logs-box { background: #0d1f3d; color: #94a3b8; padding: 14px; border-radius: 10px; font-size: 11px; font-family: monospace; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; line-height: 1.6; }
 
         /* ── Hotspot inputs ── */
         .hs-inputs { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
         .hs-inputs .field { flex: 1; min-width: 140px; }
 
         /* ── Overlay (connecting screen) ── */
-        #connect-overlay { position: fixed; inset: 0; background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 999; padding: 24px; text-align: center; }
+        #connect-overlay { position: fixed; inset: 0; background: #0d1f3d; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 999; padding: 24px; text-align: center; }
         #connect-overlay .ov-icon { font-size: 56px; margin-bottom: 16px; }
         #connect-overlay .ov-title { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
         #connect-overlay .ov-sub { font-size: 14px; color: #94a3b8; margin-bottom: 28px; }
@@ -126,7 +127,7 @@
         .modal-actions .btn { flex: 1; justify-content: center; }
 
         /* ── Footer ── */
-        footer { background: #0f172a; color: #334155; text-align: center; padding: 16px; font-size: 12px; margin-top: auto; }
+        footer { background: #0d1f3d; color: #334155; text-align: center; padding: 16px; font-size: 12px; margin-top: auto; }
         footer span { color: #475569; }
     </style>
 </head>
@@ -134,7 +135,7 @@
 
 <header>
     <div class="header-left">
-        <div class="header-icon">❄️</div>
+        <div class="header-logo"><img src="/static/logo.png" alt="MRIT"></div>
         <div class="header-title">MRIT Server</div>
     </div>
     <div class="header-right">
