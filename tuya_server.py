@@ -1866,16 +1866,34 @@ def dashboard():
 def health():
     return jsonify({"status": "ok", "site": SITE_NAME}), 200
 
+def _count_devices_in_db() -> int:
+    """Conta quantos devices estão cadastrados no banco para este site_id."""
+    try:
+        base_url = get_supabase_url()
+        headers = {**get_supabase_headers(), "Prefer": "count=exact", "Range": "0-0"}
+        url = f"{base_url}/tuya_devices?site_id=eq.{SITE_NAME}&select=tuya_device_id"
+        r = requests.get(url, headers=headers, timeout=8)
+        content_range = r.headers.get("Content-Range", "")
+        # Content-Range: 0-0/N  ou  */0
+        if "/" in content_range:
+            total = content_range.split("/")[-1]
+            return int(total) if total.isdigit() else len(r.json())
+        return len(r.json())
+    except Exception:
+        return -1  # -1 = não foi possível verificar
+
 @app.route("/api/status", methods=["GET"])
 def api_status():
     cache = load_devices_cache()
     device_ids = [k for k in cache.keys() if not k.startswith("_")]
+    devices_in_db = _count_devices_in_db()
     return jsonify({
         "site": SITE_NAME,
         "version": APP_VERSION,
         "supabase_configured": bool(SUPABASE_CONFIG.get("url") and SUPABASE_CONFIG.get("anon_key")),
         "realtime_connected": REMOTE_COMMAND_WS_APP is not None,
         "devices_cached": len(device_ids),
+        "devices_in_db": devices_in_db,
     }), 200
 
 @app.route("/api/devices/cached", methods=["GET"])

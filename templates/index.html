@@ -88,6 +88,15 @@
 
 <main>
 
+    <!-- Alerta: sem plaquinha cadastrada -->
+    <div id="no-device-banner" style="display:none; background:#fef3c7; border:1px solid #f59e0b; border-radius:14px; padding:18px 22px; margin-bottom:16px; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <div>
+            <div style="font-weight:700; font-size:15px; color:#92400e; margin-bottom:4px;">⚠️ Nenhuma plaquinha cadastrada para esta unidade</div>
+            <div style="font-size:13px; color:#b45309;">Escaneie a rede para encontrar a placa Tuya e cadastre ela no banco.</div>
+        </div>
+        <button class="btn-red" onclick="document.getElementById('btn-scan').click(); document.getElementById('btn-scan').scrollIntoView({behavior:'smooth'});">Buscar Agora</button>
+    </div>
+
     <!-- Status -->
     <div class="card">
         <h2>Status</h2>
@@ -226,7 +235,19 @@ async function loadStatus() {
         set('st-server',   dot('green') + 'Online');
         set('st-supabase', d.supabase_configured ? dot('green') + 'OK' : dot('red') + 'Não configurado');
         set('st-realtime', d.realtime_connected   ? dot('green') + 'Conectado' : dot('yellow') + 'Conectando...');
-        set('st-devices',  d.devices_cached + ' no cache');
+
+        const inDb = d.devices_in_db;
+        if (inDb === 0) {
+            set('st-devices', dot('red') + 'Sem plaquinha');
+            document.getElementById('no-device-banner').style.display = 'flex';
+        } else if (inDb > 0) {
+            set('st-devices', dot('green') + inDb + ' no banco');
+            document.getElementById('no-device-banner').style.display = 'none';
+        } else {
+            // -1 = não conseguiu verificar
+            set('st-devices', d.devices_cached + ' no cache');
+            document.getElementById('no-device-banner').style.display = 'none';
+        }
     } catch { set('st-server', dot('red') + 'Offline'); }
 }
 
