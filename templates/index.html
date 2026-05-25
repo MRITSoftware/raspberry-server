@@ -6,219 +6,295 @@
     <title>MRIT Server</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a1a; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f1f5f9; color: #0f172a; min-height: 100vh; display: flex; flex-direction: column; }
 
-        header { background: #1a1a2e; color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-        header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
-        .site-tag { background: #e94560; padding: 5px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; }
+        /* ── Header ── */
+        header { background: #0f172a; color: white; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .header-icon { width: 34px; height: 34px; background: #e94560; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+        .header-title { font-size: 16px; font-weight: 800; letter-spacing: 0.5px; }
+        .header-right { display: flex; align-items: center; gap: 10px; }
+        .site-pill { background: #1e293b; border: 1px solid #334155; padding: 5px 12px; border-radius: 20px; font-size: 12px; color: #94a3b8; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .btn-logout { background: none; border: 1px solid #334155; color: #64748b; padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all .15s; }
+        .btn-logout:hover { border-color: #e94560; color: #e94560; }
 
-        main { max-width: 860px; margin: 24px auto; padding: 0 16px 40px; }
+        /* ── Layout ── */
+        main { flex: 1; max-width: 880px; margin: 0 auto; width: 100%; padding: 20px 16px 40px; }
 
-        .card { background: white; border-radius: 14px; padding: 22px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-        .card h2 { font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+        /* ── Banner ── */
+        .banner { background: #fffbeb; border: 1px solid #fbbf24; border-radius: 14px; padding: 16px 20px; margin-bottom: 16px; display: none; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .banner-text strong { font-size: 14px; color: #92400e; display: block; margin-bottom: 3px; }
+        .banner-text span { font-size: 12px; color: #b45309; }
 
-        .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
-        .status-item { background: #f8f9fa; border-radius: 10px; padding: 12px 10px; text-align: center; }
-        .status-label { font-size: 11px; color: #999; margin-bottom: 6px; }
+        /* ── Cards ── */
+        .card { background: white; border-radius: 16px; padding: 20px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04); }
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+        .card-title { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+        .section-divider { border: none; border-top: 1px solid #f1f5f9; margin: 16px 0; }
+
+        /* ── Status grid ── */
+        .status-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        @media(min-width:480px) { .status-grid { grid-template-columns: repeat(4, 1fr); } }
+        .status-item { background: #f8fafc; border-radius: 11px; padding: 13px 10px; text-align: center; }
+        .status-label { font-size: 10px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 7px; }
         .status-value { font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+        .dot-green { background: #10b981; } .dot-red { background: #ef4444; } .dot-yellow { background: #f59e0b; }
 
-        .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-        .green { background: #22c55e; } .red { background: #ef4444; } .yellow { background: #f59e0b; }
+        /* ── Buttons ── */
+        .btn { padding: 9px 18px; border-radius: 9px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: opacity .15s, transform .1s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn:hover:not(:disabled) { opacity: 0.85; }
+        .btn:active:not(:disabled) { transform: scale(0.97); }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-primary { background: #0f172a; color: white; }
+        .btn-danger  { background: #e94560; color: white; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-ghost   { background: #f1f5f9; color: #475569; }
+        .btn-warn    { background: #f59e0b; color: white; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-        .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-        button { padding: 10px 20px; border-radius: 9px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; transition: opacity .15s; }
-        button:hover:not(:disabled) { opacity: 0.85; }
-        button:disabled { opacity: 0.45; cursor: not-allowed; }
-        .btn-dark   { background: #1a1a2e; color: white; }
-        .btn-red    { background: #e94560; color: white; }
-        .btn-green  { background: #22c55e; color: white; }
-        .btn-ghost  { background: #e5e7eb; color: #333; }
-
-        .device-list, .network-list { display: flex; flex-direction: column; gap: 8px; }
-        .device-item, .network-item { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; border: 1px solid #e5e7eb; border-radius: 10px; gap: 10px; }
-        .network-item { cursor: pointer; transition: background .15s; }
-        .network-item:hover { background: #f8f9fa; }
-        .network-item.current-net { border-color: #22c55e; background: #f0fdf4; }
-
-        .device-id, .net-ssid { font-size: 13px; font-weight: 600; font-family: monospace; word-break: break-all; }
-        .net-ssid { font-family: inherit; }
-        .device-meta, .net-meta { font-size: 12px; color: #999; margin-top: 3px; }
-        .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        /* ── Device / Network lists ── */
+        .list { display: flex; flex-direction: column; gap: 8px; }
+        .list-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 11px; }
+        .list-item.clickable { cursor: pointer; transition: background .15s; }
+        .list-item.clickable:hover { background: #f8fafc; }
+        .list-item.active-net { border-color: #10b981; background: #f0fdf4; }
+        .item-main { flex: 1; min-width: 0; }
+        .item-title { font-size: 13px; font-weight: 600; word-break: break-all; }
+        .item-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+        .badge { padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
         .badge-new  { background: #fef3c7; color: #92400e; }
         .badge-ok   { background: #d1fae5; color: #065f46; }
-        .badge-curr { background: #d1fae5; color: #065f46; }
-        .badge-open { background: #f3f4f6; color: #6b7280; }
+        .badge-open { background: #f1f5f9; color: #64748b; }
         .badge-sec  { background: #ede9fe; color: #5b21b6; }
 
-        .signal-bars { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
-        .signal-bars span { width: 4px; border-radius: 1px; background: #d1d5db; }
-        .signal-bars span.on { background: #22c55e; }
-        .signal-bars span:nth-child(1) { height: 4px; }
-        .signal-bars span:nth-child(2) { height: 7px; }
-        .signal-bars span:nth-child(3) { height: 11px; }
-        .signal-bars span:nth-child(4) { height: 16px; }
+        /* ── Signal bars ── */
+        .signal-bars { display: flex; align-items: flex-end; gap: 2px; height: 14px; }
+        .signal-bars span { width: 4px; border-radius: 1px; background: #e2e8f0; }
+        .signal-bars span.on { background: #10b981; }
+        .signal-bars span:nth-child(1) { height: 4px; } .signal-bars span:nth-child(2) { height: 7px; }
+        .signal-bars span:nth-child(3) { height: 10px; } .signal-bars span:nth-child(4) { height: 14px; }
 
-        .empty { text-align: center; color: #bbb; padding: 28px; font-size: 14px; }
-        .msg { padding: 11px 15px; border-radius: 9px; font-size: 13px; margin-top: 12px; line-height: 1.5; }
-        .msg-ok  { background: #d1fae5; color: #065f46; }
-        .msg-err { background: #fee2e2; color: #991b1b; }
+        /* ── System metrics ── */
+        .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+        @media(min-width:480px) { .metrics-grid { grid-template-columns: repeat(4, 1fr); } }
+        .metric { background: #f8fafc; border-radius: 11px; padding: 12px 10px; text-align: center; }
+        .metric-val { font-size: 20px; font-weight: 800; color: #0f172a; }
+        .metric-val.warn { color: #f59e0b; }
+        .metric-val.danger { color: #ef4444; }
+        .metric-label { font-size: 10px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        /* ── Inputs ── */
+        .field { margin-bottom: 0; }
+        .field label { display: block; font-size: 11px; color: #94a3b8; font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .field input { width: 100%; padding: 9px 12px; border: 1px solid #e2e8f0; border-radius: 9px; font-size: 13px; outline: none; background: white; transition: border-color .15s; }
+        .field input:focus { border-color: #0f172a; }
+        .input-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+
+        /* ── Messages ── */
+        .msg { padding: 11px 14px; border-radius: 9px; font-size: 13px; margin-top: 12px; line-height: 1.5; }
+        .msg-ok   { background: #d1fae5; color: #065f46; }
+        .msg-err  { background: #fee2e2; color: #991b1b; }
         .msg-warn { background: #fef3c7; color: #92400e; }
-        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #555; border-radius: 50%; animation: spin .7s linear infinite; }
+        .empty    { text-align: center; color: #cbd5e1; padding: 28px; font-size: 13px; }
+        .spinner  { display: inline-block; width: 13px; height: 13px; border: 2px solid #e2e8f0; border-top-color: #64748b; border-radius: 50%; animation: spin .7s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* Modal */
-        .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; padding: 16px; }
+        /* ── Logs ── */
+        .logs-box { background: #0f172a; color: #94a3b8; padding: 14px; border-radius: 10px; font-size: 11px; font-family: monospace; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; line-height: 1.6; }
+
+        /* ── Hotspot inputs ── */
+        .hs-inputs { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+        .hs-inputs .field { flex: 1; min-width: 140px; }
+
+        /* ── Overlay (connecting screen) ── */
+        #connect-overlay { position: fixed; inset: 0; background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 999; padding: 24px; text-align: center; }
+        #connect-overlay .ov-icon { font-size: 56px; margin-bottom: 16px; }
+        #connect-overlay .ov-title { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
+        #connect-overlay .ov-sub { font-size: 14px; color: #94a3b8; margin-bottom: 28px; }
+        #connect-overlay .ov-box { background: #1e293b; border-radius: 14px; padding: 20px 24px; max-width: 380px; text-align: left; line-height: 1.9; font-size: 13px; }
+
+        /* ── Modals ── */
+        .modal-bg { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.7); z-index: 100; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(4px); }
         .modal-bg.open { display: flex; }
-        .modal { background: white; border-radius: 16px; padding: 24px; width: 100%; max-width: 420px; }
-        .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
-        .modal .sub { font-size: 13px; color: #888; margin-bottom: 20px; }
-        .modal input { width: 100%; padding: 11px 14px; border: 1px solid #d1d5db; border-radius: 9px; font-size: 14px; margin-bottom: 10px; outline: none; }
-        .modal input:focus { border-color: #1a1a2e; }
-        .modal .modal-actions { display: flex; gap: 10px; margin-top: 6px; }
-        .modal .modal-actions button { flex: 1; }
-        .modal .warn-banner { background: #fef3c7; color: #92400e; padding: 10px 13px; border-radius: 8px; font-size: 12px; line-height: 1.5; margin-bottom: 14px; }
+        .modal { background: white; border-radius: 20px; padding: 28px; width: 100%; max-width: 420px; box-shadow: 0 24px 48px rgba(0,0,0,0.2); }
+        .modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 5px; }
+        .modal .sub { font-size: 13px; color: #64748b; margin-bottom: 20px; font-family: monospace; word-break: break-all; }
+        .modal .field { margin-bottom: 12px; }
+        .modal .warn-box { background: #fef3c7; color: #92400e; padding: 10px 13px; border-radius: 9px; font-size: 12px; line-height: 1.6; margin-bottom: 16px; }
+        .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+        .modal-actions .btn { flex: 1; justify-content: center; }
+
+        /* ── Footer ── */
+        footer { background: #0f172a; color: #334155; text-align: center; padding: 16px; font-size: 12px; margin-top: auto; }
+        footer span { color: #475569; }
     </style>
 </head>
 <body>
 
 <header>
-    <h1>MRIT Server</h1>
-    <span class="site-tag" id="header-site">carregando...</span>
+    <div class="header-left">
+        <div class="header-icon">❄️</div>
+        <div class="header-title">MRIT Server</div>
+    </div>
+    <div class="header-right">
+        <div class="site-pill" id="header-site">carregando...</div>
+        <button class="btn-logout" onclick="doLogout()">Sair</button>
+    </div>
 </header>
 
 <main>
 
-    <!-- Alerta: sem plaquinha cadastrada -->
-    <div id="no-device-banner" style="display:none; background:#fef3c7; border:1px solid #f59e0b; border-radius:14px; padding:18px 22px; margin-bottom:16px; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
-        <div>
-            <div style="font-weight:700; font-size:15px; color:#92400e; margin-bottom:4px;">⚠️ Nenhuma plaquinha cadastrada para esta unidade</div>
-            <div style="font-size:13px; color:#b45309;">Escaneie a rede para encontrar a placa Tuya e cadastre ela no banco.</div>
+    <!-- Banner: sem plaquinha -->
+    <div class="banner" id="no-device-banner">
+        <div class="banner-text">
+            <strong>⚠️ Nenhuma plaquinha cadastrada para esta unidade</strong>
+            <span>Escaneie a rede para encontrar a placa Tuya e cadastre-a no banco.</span>
         </div>
-        <button class="btn-red" onclick="document.getElementById('btn-scan').click(); document.getElementById('btn-scan').scrollIntoView({behavior:'smooth'});">Buscar Agora</button>
+        <button class="btn btn-danger" onclick="scrollToScan()">Buscar Agora</button>
     </div>
 
     <!-- Status -->
     <div class="card">
-        <h2>Status</h2>
+        <div class="card-header"><span class="card-title">Status do Sistema</span></div>
         <div class="status-grid">
             <div class="status-item"><div class="status-label">Servidor</div><div class="status-value" id="st-server"><span class="spinner"></span></div></div>
             <div class="status-item"><div class="status-label">Supabase</div><div class="status-value" id="st-supabase"><span class="spinner"></span></div></div>
             <div class="status-item"><div class="status-label">Realtime</div><div class="status-value" id="st-realtime"><span class="spinner"></span></div></div>
-            <div class="status-item"><div class="status-label">Dispositivos</div><div class="status-value" id="st-devices"><span class="spinner"></span></div></div>
+            <div class="status-item"><div class="status-label">Plaquinha</div><div class="status-value" id="st-devices"><span class="spinner"></span></div></div>
         </div>
     </div>
 
-    <!-- Wi-Fi -->
+    <!-- Dispositivos Cadastrados -->
     <div class="card">
-        <h2>Rede Wi-Fi</h2>
-        <div id="wifi-current" style="margin-bottom:14px; font-size:13px; color:#555;">verificando...</div>
-        <div class="actions">
-            <button class="btn-dark" id="btn-wifi-scan" onclick="scanWifi()">Escanear Redes</button>
-        </div>
-        <div id="wifi-list"></div>
-        <div id="wifi-msg"></div>
-
-        <div style="margin-top:18px;border-top:1px solid #f0f0f0;padding-top:16px;">
-            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Conectar Manualmente</div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-                <div>
-                    <div style="font-size:11px;color:#999;margin-bottom:4px;">SSID</div>
-                    <input id="manual-ssid" type="text" placeholder="Nome da rede" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:13px;width:190px;outline:none;">
-                </div>
-                <div>
-                    <div style="font-size:11px;color:#999;margin-bottom:4px;">Senha</div>
-                    <input id="manual-password" type="password" placeholder="Senha (vazio se aberta)" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:13px;width:190px;outline:none;">
-                </div>
-                <button class="btn-green" id="btn-manual-connect" onclick="connectManual()">Conectar</button>
-            </div>
-            <div id="manual-msg"></div>
-        </div>
-
-        <div style="margin-top:18px;border-top:1px solid #f0f0f0;padding-top:16px;">
-            <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Rede Reserva (fallback automático)</div>
-            <div id="backup-status" style="font-size:13px;color:#555;margin-bottom:10px;">verificando...</div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-                <div>
-                    <div style="font-size:11px;color:#999;margin-bottom:4px;">SSID</div>
-                    <input id="backup-ssid" type="text" placeholder="Nome da rede reserva" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:13px;width:190px;outline:none;">
-                </div>
-                <div>
-                    <div style="font-size:11px;color:#999;margin-bottom:4px;">Senha</div>
-                    <input id="backup-password" type="password" placeholder="Senha (opcional)" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:13px;width:190px;outline:none;">
-                </div>
-                <button class="btn-dark" onclick="saveBackupWifi()">Salvar Reserva</button>
-            </div>
-            <div id="backup-msg"></div>
-        </div>
+        <div class="card-header"><span class="card-title">Plaquinha Cadastrada</span></div>
+        <div id="registered-list"><div class="empty">Nenhum dispositivo no cache local ainda.</div></div>
     </div>
 
-    <!-- Hotspot -->
+    <!-- Dispositivos na Rede -->
     <div class="card">
-        <h2>Hotspot Wi-Fi</h2>
-        <div id="hotspot-status" style="font-size:13px;color:#555;margin-bottom:14px;">verificando...</div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
-            <div>
-                <div style="font-size:11px;color:#999;margin-bottom:4px;">Nome da rede (SSID)</div>
-                <input id="hs-ssid" type="text" value="MRIT-Setup" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:14px;width:180px;outline:none;">
-            </div>
-            <div>
-                <div style="font-size:11px;color:#999;margin-bottom:4px;">Senha (mín. 8 caracteres)</div>
-                <input id="hs-password" type="text" value="mrit1234" style="padding:9px 12px;border:1px solid #d1d5db;border-radius:9px;font-size:14px;width:180px;outline:none;">
-            </div>
-        </div>
-        <div class="actions">
-            <button class="btn-green" id="btn-hs-start" onclick="startHotspot()">Ligar Hotspot</button>
-            <button class="btn-ghost" id="btn-hs-stop"  onclick="stopHotspot()" style="display:none">Desligar Hotspot</button>
-        </div>
-        <div id="hotspot-msg"></div>
-    </div>
-
-    <!-- Tuya devices -->
-    <div class="card">
-        <h2>Dispositivos na Rede</h2>
-        <div class="actions">
-            <button class="btn-dark" id="btn-scan" onclick="scanDevices()">Escanear Rede</button>
+        <div class="card-header"><span class="card-title">Buscar na Rede</span></div>
+        <div class="actions" style="margin-bottom:12px;">
+            <button class="btn btn-primary" id="btn-scan" onclick="scanDevices()">Escanear Rede</button>
         </div>
         <div id="scan-list"><div class="empty">Clique em "Escanear Rede" para buscar placas Tuya.</div></div>
         <div id="register-msg"></div>
     </div>
 
-    <!-- Registered -->
+    <!-- Wi-Fi -->
     <div class="card">
-        <h2>Dispositivos Cadastrados</h2>
-        <div id="registered-list"><div class="empty">Nenhum dispositivo no cache local ainda.</div></div>
+        <div class="card-header"><span class="card-title">Rede Wi-Fi</span></div>
+        <div id="wifi-current" style="font-size:13px;color:#475569;margin-bottom:14px;">verificando...</div>
+        <div class="actions" style="margin-bottom:12px;">
+            <button class="btn btn-primary" id="btn-wifi-scan" onclick="scanWifi()">Escanear Redes</button>
+        </div>
+        <div id="wifi-list"></div>
+        <div id="wifi-msg"></div>
+
+        <hr class="section-divider">
+        <div class="card-title" style="margin-bottom:12px;">Conectar Manualmente</div>
+        <div class="input-row">
+            <div class="field" style="flex:1;min-width:150px;">
+                <label>SSID</label>
+                <input id="manual-ssid" type="text" placeholder="Nome da rede">
+            </div>
+            <div class="field" style="flex:1;min-width:150px;">
+                <label>Senha</label>
+                <input id="manual-password" type="password" placeholder="Senha (vazio se aberta)">
+            </div>
+            <button class="btn btn-success" id="btn-manual-connect" onclick="connectManual()" style="margin-bottom:0;">Conectar</button>
+        </div>
+        <div id="manual-msg"></div>
+
+        <hr class="section-divider">
+        <div class="card-title" style="margin-bottom:10px;">Rede Reserva <span style="font-weight:400;text-transform:none;font-size:11px;color:#94a3b8;">(fallback automático se perder internet)</span></div>
+        <div id="backup-status" style="font-size:13px;color:#475569;margin-bottom:10px;">verificando...</div>
+        <div class="input-row">
+            <div class="field" style="flex:1;min-width:150px;">
+                <label>SSID</label>
+                <input id="backup-ssid" type="text" placeholder="Nome da rede reserva">
+            </div>
+            <div class="field" style="flex:1;min-width:150px;">
+                <label>Senha</label>
+                <input id="backup-password" type="password" placeholder="Senha (opcional)">
+            </div>
+            <button class="btn btn-primary" onclick="saveBackupWifi()" style="margin-bottom:0;">Salvar</button>
+        </div>
+        <div id="backup-msg"></div>
+    </div>
+
+    <!-- Hotspot -->
+    <div class="card">
+        <div class="card-header"><span class="card-title">Hotspot Wi-Fi</span></div>
+        <div id="hotspot-status" style="font-size:13px;color:#475569;margin-bottom:14px;">verificando...</div>
+        <div class="hs-inputs">
+            <div class="field"><label>Nome da rede (SSID)</label><input id="hs-ssid" type="text" value="MRIT-Setup"></div>
+            <div class="field"><label>Senha (mín. 8 chars)</label><input id="hs-password" type="text" value="mrit1234"></div>
+        </div>
+        <div class="actions">
+            <button class="btn btn-success" id="btn-hs-start" onclick="startHotspot()">Ligar Hotspot</button>
+            <button class="btn btn-ghost"   id="btn-hs-stop"  onclick="stopHotspot()" style="display:none">Desligar</button>
+        </div>
+        <div id="hotspot-msg"></div>
+    </div>
+
+    <!-- Sistema -->
+    <div class="card">
+        <div class="card-header"><span class="card-title">Sistema</span></div>
+        <div class="metrics-grid" id="metrics-grid">
+            <div class="metric"><div class="metric-val" id="m-temp">—</div><div class="metric-label">Temperatura</div></div>
+            <div class="metric"><div class="metric-val" id="m-ram">—</div><div class="metric-label">RAM</div></div>
+            <div class="metric"><div class="metric-val" id="m-disk">—</div><div class="metric-label">Disco</div></div>
+            <div class="metric"><div class="metric-val" id="m-uptime">—</div><div class="metric-label">Uptime</div></div>
+        </div>
+        <div class="actions" style="margin-bottom:16px;">
+            <button class="btn btn-ghost" id="btn-restart-svc" onclick="restartService()">↺ Reiniciar Serviço</button>
+            <button class="btn btn-warn"  id="btn-reboot"      onclick="confirmReboot()">⏻ Reiniciar Pi</button>
+        </div>
+        <div id="sys-msg"></div>
+        <hr class="section-divider">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div class="card-title">Logs</div>
+            <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px;" onclick="loadLogs()">Atualizar</button>
+        </div>
+        <div class="logs-box" id="logs-box">Clique em "Atualizar" para ver os logs.</div>
     </div>
 
 </main>
 
-<!-- Modal cadastro de dispositivo -->
+<footer>© GelaFit — <span>Tecnologia MRIT</span></footer>
+
+<!-- Modal: cadastro de dispositivo -->
 <div class="modal-bg" id="register-modal">
     <div class="modal">
-        <h3>Cadastrar Dispositivo</h3>
-        <div class="sub" id="register-modal-device-id" style="font-family:monospace;word-break:break-all;"></div>
-        <div style="margin-bottom:14px;">
-            <div style="font-size:12px;color:#888;margin-bottom:6px;">Email da unidade (confirme antes de salvar)</div>
-            <input type="email" id="register-modal-site" placeholder="email@unidade.com.br" style="width:100%;padding:11px 14px;border:1px solid #d1d5db;border-radius:9px;font-size:14px;outline:none;" />
+        <h3>Cadastrar Plaquinha</h3>
+        <div class="sub" id="register-modal-device-id"></div>
+        <div class="field">
+            <label>Email da Unidade</label>
+            <input type="email" id="register-modal-site" placeholder="email@unidade.com.br">
         </div>
         <div id="register-modal-msg"></div>
         <div class="modal-actions">
-            <button class="btn-ghost" onclick="closeRegisterModal()">Cancelar</button>
-            <button class="btn-green" id="btn-register-confirm" onclick="confirmRegister()">Cadastrar</button>
+            <button class="btn btn-ghost" id="btn-register-cancel" onclick="closeRegisterModal()">Cancelar</button>
+            <button class="btn btn-success" id="btn-register-confirm" onclick="confirmRegister()">Cadastrar</button>
         </div>
     </div>
 </div>
 
-<!-- Modal senha Wi-Fi -->
+<!-- Modal: senha Wi-Fi -->
 <div class="modal-bg" id="wifi-modal">
     <div class="modal">
         <h3 id="modal-ssid-title">Conectar à rede</h3>
         <div class="sub" id="modal-ssid-sub"></div>
-        <div class="warn-banner">⚠️ O Pi mudará de rede Wi-Fi. A conexão com este painel será interrompida por alguns segundos. Reconecte pelo mesmo endereço após a troca.</div>
-        <input type="password" id="modal-password" placeholder="Senha da rede (deixe vazio se aberta)" />
+        <div class="warn-box">⚠️ O Pi mudará de rede Wi-Fi. A conexão com este painel será interrompida. Reconecte pelo mesmo endereço após a troca.</div>
+        <div class="field">
+            <label>Senha</label>
+            <input type="password" id="modal-password" placeholder="Senha (deixe vazio se aberta)">
+        </div>
         <div id="modal-msg"></div>
         <div class="modal-actions">
-            <button class="btn-ghost" onclick="closeModal()">Cancelar</button>
-            <button class="btn-green" id="btn-modal-connect" onclick="connectWifi()">Conectar</button>
+            <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+            <button class="btn btn-success" id="btn-modal-connect" onclick="connectWifi()">Conectar</button>
         </div>
     </div>
 </div>
@@ -226,8 +302,15 @@
 <script>
 let selectedSsid = '';
 let currentSsid  = '';
+let registerDeviceId = '';
 
-// ── Status ───────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────
+async function doLogout() {
+    await fetch('/logout', { method: 'POST' });
+    window.location.href = '/login';
+}
+
+// ── Status ────────────────────────────────────────────
 async function loadStatus() {
     try {
         const d = await get('/api/status');
@@ -235,7 +318,6 @@ async function loadStatus() {
         set('st-server',   dot('green') + 'Online');
         set('st-supabase', d.supabase_configured ? dot('green') + 'OK' : dot('red') + 'Não configurado');
         set('st-realtime', d.realtime_connected   ? dot('green') + 'Conectado' : dot('yellow') + 'Conectando...');
-
         const inDb = d.devices_in_db;
         if (inDb === 0) {
             set('st-devices', dot('red') + 'Sem plaquinha');
@@ -244,11 +326,63 @@ async function loadStatus() {
             set('st-devices', dot('green') + inDb + ' no banco');
             document.getElementById('no-device-banner').style.display = 'none';
         } else {
-            // -1 = não conseguiu verificar
             set('st-devices', d.devices_cached + ' no cache');
-            document.getElementById('no-device-banner').style.display = 'none';
         }
     } catch { set('st-server', dot('red') + 'Offline'); }
+}
+
+// ── Sistema ───────────────────────────────────────────
+async function loadSystemHealth() {
+    try {
+        const d = await get('/api/system/health');
+        const t = d.temp_c || 0;
+        const r = d.ram_pct || 0;
+        const dk = parseInt(d.disk_pct) || 0;
+        setMetric('m-temp',  t + '°C',  t > 75 ? 'danger' : t > 60 ? 'warn' : '');
+        setMetric('m-ram',   r + '%',   r > 85 ? 'danger' : r > 70 ? 'warn' : '');
+        setMetric('m-disk',  dk + '%',  dk > 85 ? 'danger' : dk > 70 ? 'warn' : '');
+        setMetric('m-uptime', d.uptime || '—', '');
+    } catch {}
+}
+
+function setMetric(id, val, cls) {
+    const el = document.getElementById(id);
+    el.textContent = val;
+    el.className = 'metric-val' + (cls ? ' ' + cls : '');
+}
+
+async function restartService() {
+    const btn = document.getElementById('btn-restart-svc');
+    const msg = document.getElementById('sys-msg');
+    btn.disabled = true; btn.textContent = '↺ Reiniciando...';
+    try {
+        const d = await fetch('/api/system/restart-service', { method: 'POST' }).then(r => r.json());
+        msg.innerHTML = `<div class="msg msg-warn">${d.message} O painel ficará indisponível por alguns segundos.</div>`;
+    } catch {}
+    setTimeout(() => { btn.disabled = false; btn.textContent = '↺ Reiniciar Serviço'; }, 5000);
+}
+
+function confirmReboot() {
+    if (!confirm('Reiniciar o Raspberry Pi? O sistema ficará offline por cerca de 30 segundos.')) return;
+    doReboot();
+}
+async function doReboot() {
+    const msg = document.getElementById('sys-msg');
+    document.getElementById('btn-reboot').disabled = true;
+    try {
+        await fetch('/api/system/reboot', { method: 'POST' });
+        msg.innerHTML = '<div class="msg msg-warn">⏻ Reiniciando Pi... aguarde ~30 segundos e recarregue a página.</div>';
+    } catch {}
+}
+
+async function loadLogs() {
+    const box = document.getElementById('logs-box');
+    box.textContent = 'Carregando...';
+    try {
+        const d = await get('/api/system/logs?lines=80');
+        box.textContent = d.logs || '(sem logs)';
+        box.scrollTop = box.scrollHeight;
+    } catch(e) { box.textContent = 'Erro: ' + e.message; }
 }
 
 // ── Wi-Fi ─────────────────────────────────────────────
@@ -258,11 +392,9 @@ async function loadWifiCurrent() {
         const el = document.getElementById('wifi-current');
         if (d.current) {
             currentSsid = d.current.ssid;
-            el.innerHTML = `<span style="color:#065f46;font-weight:600;">● Conectado:</span> ${d.current.ssid} &nbsp;·&nbsp; Sinal: ${d.current.signal}%`;
-        } else {
-            el.textContent = 'Sem conexão Wi-Fi ativa.';
-        }
-    } catch { document.getElementById('wifi-current').textContent = 'Não foi possível verificar a rede atual.'; }
+            el.innerHTML = `<b style="color:#065f46;">● Conectado:</b> ${esc(d.current.ssid)} &nbsp;·&nbsp; Sinal: ${d.current.signal}%`;
+        } else { el.textContent = 'Sem conexão Wi-Fi ativa.'; }
+    } catch { document.getElementById('wifi-current').textContent = 'Não foi possível verificar.'; }
 }
 
 async function scanWifi() {
@@ -270,106 +402,32 @@ async function scanWifi() {
     const list = document.getElementById('wifi-list');
     document.getElementById('wifi-msg').innerHTML = '';
     btn.disabled = true; btn.textContent = 'Escaneando...';
-    list.innerHTML = '<div class="empty"><span class="spinner"></span> Buscando redes... (pode levar até 15 segundos)</div>';
-
+    list.innerHTML = '<div class="empty"><span class="spinner"></span> Buscando redes...</div>';
     try {
         const d = await get('/api/wifi/scan');
-        const cached = d.cached ? '<div class="msg msg-warn" style="margin-bottom:10px;">⚠️ Hotspot ativo — redes do último scan. Para atualizar, desligue o hotspot primeiro.</div>' : '';
-        if (!d.networks || d.networks.length === 0) {
-            list.innerHTML = cached + '<div class="empty">Nenhuma rede Wi-Fi encontrada.</div>';
+        const cached = d.cached ? '<div class="msg msg-warn" style="margin-bottom:8px;">⚠️ Hotspot ativo — redes do último scan. Desligue o hotspot para atualizar.</div>' : '';
+        if (!d.networks?.length) {
+            list.innerHTML = cached + '<div class="empty">Nenhuma rede encontrada.</div>';
         } else {
-            list.innerHTML = cached + '<div class="network-list">' +
-                d.networks.map(n => `
-                    <div class="network-item ${n.ssid === currentSsid ? 'current-net' : ''}" onclick="openModal('${esc(n.ssid)}', ${n.signal})">
-                        <div>
-                            <div class="net-ssid">${esc(n.ssid)}</div>
-                            <div class="net-meta">${n.security || 'Aberta'}</div>
-                        </div>
-                        <div style="display:flex;align-items:center;gap:10px;">
-                            ${signalBars(n.signal)}
-                            ${n.ssid === currentSsid
-                                ? '<span class="badge badge-curr">Atual</span>'
-                                : (n.security && n.security !== 'Aberta'
-                                    ? '<span class="badge badge-sec">🔒</span>'
-                                    : '<span class="badge badge-open">Aberta</span>')}
-                        </div>
-                    </div>`).join('') + '</div>';
+            list.innerHTML = cached + '<div class="list">' + d.networks.map(n => `
+                <div class="list-item clickable ${n.ssid === currentSsid ? 'active-net' : ''}" onclick="openModal('${esc(n.ssid)}')">
+                    <div class="item-main">
+                        <div class="item-title">${esc(n.ssid)}</div>
+                        <div class="item-sub">${n.security || 'Aberta'}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        ${signalBars(n.signal)}
+                        ${n.ssid === currentSsid ? '<span class="badge badge-ok">Atual</span>'
+                            : n.security && n.security !== 'Aberta' ? '<span class="badge badge-sec">🔒</span>'
+                            : '<span class="badge badge-open">Aberta</span>'}
+                    </div>
+                </div>`).join('') + '</div>';
         }
-    } catch(e) {
-        list.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
-    } finally {
-        btn.disabled = false; btn.textContent = 'Escanear Redes';
-    }
+    } catch(e) { list.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`; }
+    finally { btn.disabled = false; btn.textContent = 'Escanear Redes'; }
 }
 
-async function connectManual() {
-    const ssid     = document.getElementById('manual-ssid').value.trim();
-    const password = document.getElementById('manual-password').value;
-    const btn = document.getElementById('btn-manual-connect');
-    const msg = document.getElementById('manual-msg');
-    if (!ssid) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">SSID obrigatório.</div>'; return; }
-    btn.disabled = true; btn.textContent = 'Conectando...';
-    msg.innerHTML = '';
-    try {
-        const r = await fetch('/api/wifi/connect', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ssid, password })
-        });
-        const d = await r.json();
-        if (d.ok && d.async) {
-            showConnectingScreen(ssid);
-        } else if (d.ok) {
-            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:8px;">✓ ${d.message}<br><small>Reconecte ao Wi-Fi "${esc(ssid)}" e acesse o painel novamente.</small></div>`;
-            btn.textContent = 'Conectado!';
-            loadWifiCurrent();
-        } else {
-            msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}</div>`;
-            btn.disabled = false; btn.textContent = 'Conectar';
-        }
-    } catch(e) {
-        msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`;
-        btn.disabled = false; btn.textContent = 'Conectar';
-    }
-}
-
-async function loadBackupWifi() {
-    try {
-        const d = await get('/api/wifi/backup');
-        const el = document.getElementById('backup-status');
-        if (d.configured) {
-            el.innerHTML = `<span style="color:#065f46;font-weight:600;">✓ Configurada:</span> ${esc(d.ssid)} <span style="color:#999;font-size:12px;">— se a internet cair por 3 min, o Pi troca automaticamente</span>`;
-            document.getElementById('backup-ssid').value = d.ssid;
-        } else {
-            el.textContent = 'Nenhuma rede reserva configurada.';
-        }
-    } catch {}
-}
-
-async function saveBackupWifi() {
-    const ssid     = document.getElementById('backup-ssid').value.trim();
-    const password = document.getElementById('backup-password').value;
-    const msg = document.getElementById('backup-msg');
-    if (!ssid) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">SSID obrigatório.</div>'; return; }
-    try {
-        const r = await fetch('/api/wifi/backup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ssid, password })
-        });
-        const d = await r.json();
-        if (d.ok) {
-            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:8px;">✓ Rede reserva "${esc(d.ssid)}" salva.</div>`;
-            loadBackupWifi();
-        } else {
-            msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}</div>`;
-        }
-    } catch(e) {
-        msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`;
-    }
-}
-
-function openModal(ssid, signal) {
+function openModal(ssid) {
     selectedSsid = ssid;
     document.getElementById('modal-ssid-title').textContent = 'Conectar à rede';
     document.getElementById('modal-ssid-sub').textContent = ssid;
@@ -380,10 +438,7 @@ function openModal(ssid, signal) {
     document.getElementById('wifi-modal').classList.add('open');
     setTimeout(() => document.getElementById('modal-password').focus(), 100);
 }
-
-function closeModal() {
-    document.getElementById('wifi-modal').classList.remove('open');
-}
+function closeModal() { document.getElementById('wifi-modal').classList.remove('open'); }
 
 async function connectWifi() {
     const password = document.getElementById('modal-password').value;
@@ -391,74 +446,172 @@ async function connectWifi() {
     const msg = document.getElementById('modal-msg');
     btn.disabled = true; btn.textContent = 'Conectando...';
     msg.innerHTML = '';
-
     try {
-        const r = await fetch('/api/wifi/connect', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ssid: selectedSsid, password })
-        });
+        const r = await fetch('/api/wifi/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ssid: selectedSsid, password }) });
         const d = await r.json();
-        if (d.ok && d.async) {
-            showConnectingScreen(selectedSsid);
-        } else if (d.ok) {
-            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:10px;">✓ ${d.message}<br><small>Reconecte ao Wi-Fi "${esc(selectedSsid)}" e acesse o painel novamente.</small></div>`;
-            btn.textContent = 'Conectado!';
-            loadWifiCurrent();
-        } else {
-            msg.innerHTML = `<div class="msg msg-err" style="margin-top:10px;">Erro: ${d.error}</div>`;
-            btn.disabled = false; btn.textContent = 'Tentar novamente';
-        }
-    } catch(e) {
-        msg.innerHTML = `<div class="msg msg-err" style="margin-top:10px;">Erro de conexão: ${e.message}</div>`;
-        btn.disabled = false; btn.textContent = 'Tentar novamente';
-    }
+        if (d.ok && d.async) { showConnectingScreen(selectedSsid); }
+        else if (d.ok) { msg.innerHTML = `<div class="msg msg-ok">✓ ${d.message}</div>`; btn.textContent = 'Conectado!'; loadWifiCurrent(); }
+        else { msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`; btn.disabled = false; btn.textContent = 'Tentar novamente'; }
+    } catch(e) { msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`; btn.disabled = false; btn.textContent = 'Tentar novamente'; }
 }
 
-// ── Tuya ──────────────────────────────────────────────
-let registerDeviceId = '';
+async function connectManual() {
+    const ssid = document.getElementById('manual-ssid').value.trim();
+    const password = document.getElementById('manual-password').value;
+    const btn = document.getElementById('btn-manual-connect');
+    const msg = document.getElementById('manual-msg');
+    if (!ssid) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">SSID obrigatório.</div>'; return; }
+    btn.disabled = true; btn.textContent = 'Conectando...';
+    msg.innerHTML = '';
+    try {
+        const r = await fetch('/api/wifi/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ssid, password }) });
+        const d = await r.json();
+        if (d.ok && d.async) { showConnectingScreen(ssid); }
+        else if (d.ok) { msg.innerHTML = `<div class="msg msg-ok" style="margin-top:8px;">✓ ${d.message}</div>`; btn.textContent = 'Conectado!'; loadWifiCurrent(); }
+        else { msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}</div>`; btn.disabled = false; btn.textContent = 'Conectar'; }
+    } catch(e) { msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`; btn.disabled = false; btn.textContent = 'Conectar'; }
+}
+
+async function loadBackupWifi() {
+    try {
+        const d = await get('/api/wifi/backup');
+        const el = document.getElementById('backup-status');
+        if (d.configured) {
+            el.innerHTML = `<b style="color:#065f46;">✓ Configurada:</b> ${esc(d.ssid)}`;
+            document.getElementById('backup-ssid').value = d.ssid;
+        } else { el.textContent = 'Nenhuma rede reserva configurada.'; }
+    } catch {}
+}
+
+async function saveBackupWifi() {
+    const ssid = document.getElementById('backup-ssid').value.trim();
+    const password = document.getElementById('backup-password').value;
+    const msg = document.getElementById('backup-msg');
+    if (!ssid) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">SSID obrigatório.</div>'; return; }
+    try {
+        const r = await fetch('/api/wifi/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ssid, password }) });
+        const d = await r.json();
+        msg.innerHTML = d.ok ? `<div class="msg msg-ok" style="margin-top:8px;">✓ Rede reserva "${esc(d.ssid)}" salva.</div>`
+                             : `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}</div>`;
+        if (d.ok) loadBackupWifi();
+    } catch(e) { document.getElementById('backup-msg').innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`; }
+}
+
+// ── Hotspot ───────────────────────────────────────────
+async function loadHotspotStatus() {
+    try {
+        const d = await get('/api/wifi/hotspot/status');
+        const el = document.getElementById('hotspot-status');
+        const start = document.getElementById('btn-hs-start');
+        const stop  = document.getElementById('btn-hs-stop');
+        if (d.active) {
+            el.innerHTML = `<b style="color:#065f46;">● Hotspot ativo:</b> ${document.getElementById('hs-ssid').value || 'MRIT-Setup'}`;
+            start.style.display = 'none'; stop.style.display = 'inline-flex';
+        } else {
+            el.innerHTML = '<span style="color:#94a3b8;">● Hotspot desligado</span>';
+            start.style.display = 'inline-flex'; stop.style.display = 'none';
+        }
+    } catch {}
+}
+
+async function startHotspot() {
+    const ssid = document.getElementById('hs-ssid').value.trim();
+    const password = document.getElementById('hs-password').value.trim();
+    const btn = document.getElementById('btn-hs-start');
+    const msg = document.getElementById('hotspot-msg');
+    btn.disabled = true; btn.textContent = 'Ligando...';
+    msg.innerHTML = '';
+    try {
+        const r = await fetch('/api/wifi/hotspot/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ssid, password }) });
+        const d = await r.json();
+        if (d.ok) { msg.innerHTML = `<div class="msg msg-ok">✓ Hotspot "<b>${esc(d.ssid)}</b>" ativo · Senha: <b>${esc(d.password)}</b><br><small>Conecte-se a esta rede e acesse http://192.168.4.1:8000</small></div>`; loadHotspotStatus(); }
+        else { msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`; btn.disabled = false; btn.textContent = 'Ligar Hotspot'; }
+    } catch(e) { msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`; btn.disabled = false; btn.textContent = 'Ligar Hotspot'; }
+}
+
+async function stopHotspot() {
+    const btn = document.getElementById('btn-hs-stop');
+    const msg = document.getElementById('hotspot-msg');
+    btn.disabled = true; btn.textContent = 'Desligando...';
+    msg.innerHTML = '';
+    try {
+        const d = await fetch('/api/wifi/hotspot/stop', { method: 'POST' }).then(r => r.json());
+        if (d.ok) { msg.innerHTML = '<div class="msg msg-ok">Hotspot desligado.</div>'; loadHotspotStatus(); }
+        else { msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`; btn.disabled = false; btn.textContent = 'Desligar'; }
+    } catch(e) { msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`; btn.disabled = false; btn.textContent = 'Desligar'; }
+}
+
+// ── Dispositivos ──────────────────────────────────────
+async function loadRegistered() {
+    try {
+        const d = await get('/api/devices/cached');
+        const list = document.getElementById('registered-list');
+        if (!d.devices?.length) { list.innerHTML = '<div class="empty">Nenhum dispositivo no cache local ainda.</div>'; return; }
+        list.innerHTML = '<div class="list">' + d.devices.map(dev => `
+            <div class="list-item" id="dev-${dev.id}">
+                <div class="item-main">
+                    <div class="item-title">${dev.id}</div>
+                    <div class="item-sub">IP: ${dev.lan_ip || '—'} · Versão: ${dev.version || '—'} · Key: ${dev.local_key_masked || '—'}</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+                    <span class="badge badge-ok">Cadastrado</span>
+                    <button class="btn btn-ghost" style="padding:5px 11px;font-size:12px;color:#dc2626;" onclick="removeDevice('${dev.id}')">Remover</button>
+                </div>
+            </div>`).join('') + '</div>';
+    } catch {}
+}
+
+async function removeDevice(id) {
+    if (!confirm(`Remover dispositivo ${id} do cache e do banco?`)) return;
+    try {
+        const d = await fetch(`/api/devices/${id}`, { method: 'DELETE' }).then(r => r.json());
+        if (d.ok) { document.getElementById(`dev-${id}`)?.remove(); loadStatus(); }
+    } catch(e) { alert('Erro ao remover: ' + e.message); }
+}
 
 async function scanDevices() {
     const btn = document.getElementById('btn-scan');
     const list = document.getElementById('scan-list');
     document.getElementById('register-msg').innerHTML = '';
     btn.disabled = true; btn.textContent = 'Escaneando...';
-    list.innerHTML = '<div class="empty"><span class="spinner"></span> Buscando placas Tuya... (pode levar ~30 segundos)</div>';
-
+    list.innerHTML = '<div class="empty"><span class="spinner"></span> Buscando placas Tuya... (~30 segundos)</div>';
     try {
         const d = await get('/tuya/devices');
         const devices = d.devices || [];
-        if (devices.length === 0) {
-            list.innerHTML = '<div class="empty">Nenhuma placa Tuya encontrada. Verifique se está na mesma rede Wi-Fi.</div>';
+        if (!devices.length) {
+            list.innerHTML = '<div class="empty">Nenhuma placa encontrada. Verifique se está na mesma rede Wi-Fi.</div>';
         } else {
-            list.innerHTML = '<div class="device-list">' + devices.map(dev => `
-                <div class="device-item">
-                    <div style="flex:1;min-width:0;">
-                        <div class="device-id">${dev.id}</div>
-                        <div class="device-meta">IP: ${dev.ip || '—'} · Versão: ${dev.version || '—'}</div>
+            list.innerHTML = '<div class="list">' + devices.map(dev => `
+                <div class="list-item">
+                    <div class="item-main">
+                        <div class="item-title">${dev.id}</div>
+                        <div class="item-sub">IP: ${dev.ip || '—'} · Versão: ${dev.version || '—'}</div>
                     </div>
-                    <button class="btn-green" style="flex-shrink:0;padding:7px 14px;font-size:13px;" onclick="openRegisterModal('${dev.id}')">Cadastrar</button>
+                    <button class="btn btn-success" style="flex-shrink:0;padding:7px 14px;font-size:12px;" onclick="openRegisterModal('${dev.id}')">Cadastrar</button>
                 </div>`).join('') + '</div>';
         }
-    } catch(e) {
-        list.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
-    } finally { btn.disabled = false; btn.textContent = 'Escanear Rede'; }
+    } catch(e) { list.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`; }
+    finally { btn.disabled = false; btn.textContent = 'Escanear Rede'; }
+}
+
+function scrollToScan() {
+    document.getElementById('btn-scan').scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('btn-scan').click();
 }
 
 function openRegisterModal(deviceId) {
     registerDeviceId = deviceId;
     document.getElementById('register-modal-device-id').textContent = deviceId;
-    document.getElementById('register-modal-site').value = document.getElementById('header-site').textContent || '';
+    document.getElementById('register-modal-site').value = document.getElementById('header-site').textContent.trim() || '';
     document.getElementById('register-modal-msg').innerHTML = '';
     document.getElementById('btn-register-confirm').disabled = false;
     document.getElementById('btn-register-confirm').textContent = 'Cadastrar';
+    document.getElementById('btn-register-confirm').style.display = 'flex';
+    document.getElementById('btn-register-cancel').textContent = 'Cancelar';
     document.getElementById('register-modal').classList.add('open');
     setTimeout(() => document.getElementById('register-modal-site').focus(), 100);
 }
-
-function closeRegisterModal() {
-    document.getElementById('register-modal').classList.remove('open');
-}
+function closeRegisterModal() { document.getElementById('register-modal').classList.remove('open'); }
 
 async function confirmRegister() {
     const siteId = document.getElementById('register-modal-site').value.trim();
@@ -468,15 +621,12 @@ async function confirmRegister() {
     btn.disabled = true; btn.textContent = 'Cadastrando...';
     msg.innerHTML = '';
     try {
-        const r = await fetch('/tuya/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ device_id: registerDeviceId, site_id: siteId })
-        });
+        const r = await fetch('/tuya/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device_id: registerDeviceId, site_id: siteId }) });
         const d = await r.json();
         if (d.ok) {
             msg.innerHTML = `<div class="msg msg-ok" style="margin-top:8px;">✓ Dispositivo ${d.action} para <b>${esc(d.site_id)}</b>.</div>`;
-            btn.textContent = 'Cadastrado!';
+            btn.style.display = 'none';
+            document.getElementById('btn-register-cancel').textContent = 'Fechar';
             loadStatus(); loadRegistered();
         } else {
             msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${d.error}</div>`;
@@ -488,144 +638,29 @@ async function confirmRegister() {
     }
 }
 
-async function loadRegistered() {
-    try {
-        const d = await get('/api/devices/cached');
-        const list = document.getElementById('registered-list');
-        if (!d.devices || d.devices.length === 0) {
-            list.innerHTML = '<div class="empty">Nenhum dispositivo no cache local ainda.</div>';
-            return;
-        }
-        list.innerHTML = '<div class="device-list">' + d.devices.map(dev => `
-            <div class="device-item" id="dev-${dev.id}">
-                <div style="flex:1;min-width:0;">
-                    <div class="device-id">${dev.id}</div>
-                    <div class="device-meta">IP: ${dev.lan_ip || '—'} · Versão: ${dev.version || '—'} · Key: ${dev.local_key_masked || '—'}</div>
-                </div>
-                <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
-                    <span class="badge badge-ok">Cadastrado</span>
-                    <button class="btn-ghost" style="padding:6px 12px;font-size:12px;color:#dc2626;" onclick="removeDevice('${dev.id}')">Remover</button>
-                </div>
-            </div>`).join('') + '</div>';
-    } catch {}
-}
-
-async function removeDevice(id) {
-    if (!confirm(`Remover dispositivo ${id} do cache e do banco?`)) return;
-    try {
-        const r = await fetch(`/api/devices/${id}`, { method: 'DELETE' });
-        const d = await r.json();
-        if (d.ok) {
-            const el = document.getElementById(`dev-${id}`);
-            if (el) el.remove();
-            loadStatus();
-        }
-    } catch(e) {
-        alert('Erro ao remover: ' + e.message);
-    }
-}
-
-// ── Hotspot ───────────────────────────────────────────
-async function loadHotspotStatus() {
-    try {
-        const d = await get('/api/wifi/hotspot/status');
-        const el = document.getElementById('hotspot-status');
-        const btnStart = document.getElementById('btn-hs-start');
-        const btnStop  = document.getElementById('btn-hs-stop');
-        if (d.active) {
-            const ssid = document.getElementById('hs-ssid').value || 'MRIT-Setup';
-            el.innerHTML = `<span style="color:#065f46;font-weight:600;">● Hotspot ativo:</span> ${ssid}`;
-            btnStart.style.display = 'none';
-            btnStop.style.display  = 'block';
-        } else {
-            el.innerHTML = '<span style="color:#999;">● Hotspot desligado</span>';
-            btnStart.style.display = 'block';
-            btnStop.style.display  = 'none';
-        }
-    } catch {}
-}
-
-async function startHotspot() {
-    const ssid     = document.getElementById('hs-ssid').value.trim();
-    const password = document.getElementById('hs-password').value.trim();
-    const btn = document.getElementById('btn-hs-start');
-    const msg = document.getElementById('hotspot-msg');
-    btn.disabled = true; btn.textContent = 'Ligando...';
-    msg.innerHTML = '';
-    try {
-        const r = await fetch('/api/wifi/hotspot/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ssid, password })
-        });
-        const d = await r.json();
-        if (d.ok) {
-            msg.innerHTML = `<div class="msg msg-ok">✓ Hotspot "<b>${d.ssid}</b>" ativo · Senha: <b>${d.password}</b><br><small>Conecte outro dispositivo a esta rede para acessar o painel em http://192.168.4.1:8000</small></div>`;
-            loadHotspotStatus();
-        } else {
-            msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`;
-            btn.disabled = false; btn.textContent = 'Ligar Hotspot';
-        }
-    } catch(e) {
-        msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
-        btn.disabled = false; btn.textContent = 'Ligar Hotspot';
-    }
-}
-
-async function stopHotspot() {
-    const btn = document.getElementById('btn-hs-stop');
-    const msg = document.getElementById('hotspot-msg');
-    btn.disabled = true; btn.textContent = 'Desligando...';
-    msg.innerHTML = '';
-    try {
-        const d = await fetch('/api/wifi/hotspot/stop', { method: 'POST' }).then(r => r.json());
-        if (d.ok) {
-            msg.innerHTML = '<div class="msg msg-ok">Hotspot desligado.</div>';
-            loadHotspotStatus();
-        } else {
-            msg.innerHTML = `<div class="msg msg-err">Erro: ${d.error}</div>`;
-            btn.disabled = false; btn.textContent = 'Desligar Hotspot';
-        }
-    } catch(e) {
-        msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
-        btn.disabled = false; btn.textContent = 'Desligar Hotspot';
-    }
-}
-
-// ── Tela de espera pós-conexão via hotspot ────────────
+// ── Connecting overlay ────────────────────────────────
 function showConnectingScreen(ssid) {
     closeModal();
-    document.getElementById('wifi-modal').classList.remove('open');
-
-    // Sobrepõe a página inteira com a tela de espera
     const overlay = document.createElement('div');
     overlay.id = 'connect-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:#1a1a2e;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;padding:24px;text-align:center;';
-
     let secs = 45;
     overlay.innerHTML = `
-        <div style="font-size:48px;margin-bottom:16px;">📶</div>
-        <div style="font-size:20px;font-weight:700;margin-bottom:8px;">Conectando a "${esc(ssid)}"</div>
-        <div style="font-size:14px;color:#aaa;margin-bottom:28px;">aguarde até <span id="oc-secs">${secs}</span> segundos...</div>
-        <div style="background:#ffffff18;border-radius:14px;padding:20px 24px;max-width:380px;text-align:left;line-height:1.8;font-size:14px;">
+        <div class="ov-icon">📶</div>
+        <div class="ov-title">Conectando a "${esc(ssid)}"</div>
+        <div class="ov-sub">aguarde até <span id="oc-secs">${secs}</span> segundos...</div>
+        <div class="ov-box">
             <b>O que vai acontecer:</b><br>
             • O hotspot <b>MRIT-Setup</b> vai desligar<br>
             • O Pi vai conectar ao Wi-Fi <b>"${esc(ssid)}"</b><br>
-            • Reconecte seu celular/notebook ao <b>"${esc(ssid)}"</b><br>
-            • Abra o roteador e veja qual IP o <b>mrit-pi</b> recebeu<br>
-            • Se o hotspot voltar, a senha estava errada — tente de novo
-        </div>
-    `;
+            • Reconecte ao <b>"${esc(ssid)}"</b> e veja o IP no roteador<br>
+            • Se o hotspot voltar, a senha estava errada
+        </div>`;
     document.body.appendChild(overlay);
-
-    const timer = setInterval(() => {
+    const t = setInterval(() => {
         secs--;
         const el = document.getElementById('oc-secs');
         if (el) el.textContent = secs;
-        if (secs <= 0) {
-            clearInterval(timer);
-            overlay.querySelector('div:nth-child(3)').textContent = 'Se o hotspot voltou, a senha estava errada. Conecte ao MRIT-Setup e tente de novo.';
-        }
+        if (secs <= 0) { clearInterval(t); overlay.querySelector('.ov-sub').textContent = 'Se o hotspot voltou, a senha estava errada. Reconecte ao MRIT-Setup e tente novamente.'; }
     }, 1000);
 }
 
@@ -634,10 +669,14 @@ function signalBars(pct) {
     const bars = pct >= 75 ? 4 : pct >= 50 ? 3 : pct >= 25 ? 2 : 1;
     return '<div class="signal-bars">' + [1,2,3,4].map(i => `<span class="${i<=bars?'on':''}"></span>`).join('') + '</div>';
 }
-function dot(c) { return `<span class="dot ${c}"></span>`; }
+function dot(c) { return `<span class="dot dot-${c}"></span>`; }
 function set(id, html) { document.getElementById(id).innerHTML = html; }
-function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-async function get(url) { const r = await fetch(url); return r.json(); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+async function get(url) {
+    const r = await fetch(url);
+    if (r.status === 401) { window.location.href = '/login'; throw new Error('Unauthorized'); }
+    return r.json();
+}
 
 // Fechar modais clicando fora
 document.getElementById('wifi-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
@@ -649,8 +688,10 @@ loadWifiCurrent();
 loadHotspotStatus();
 loadRegistered();
 loadBackupWifi();
+loadSystemHealth();
 setInterval(loadStatus, 30000);
 setInterval(loadWifiCurrent, 60000);
+setInterval(loadSystemHealth, 60000);
 </script>
 </body>
 </html>

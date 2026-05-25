@@ -11,7 +11,8 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse
 
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for
+from functools import wraps
 import tinytuya
 
 # =========================
@@ -1854,6 +1855,40 @@ def send_tuya_command(
 # =========================
 
 app = Flask(__name__)
+app.secret_key = b'mrit-gelafit-server-secret-2024'
+
+PANEL_PASSWORD = "MRITSERVER#REDEGELAFIT"
+
+@app.before_request
+def check_auth():
+    public = {'/health', '/login'}
+    if request.path in public or request.path.startswith('/static'):
+        return None
+    if session.get('authenticated'):
+        return None
+    if request.path.startswith('/api/') or request.is_json:
+        return jsonify({"error": "Unauthorized", "login_required": True}), 401
+    return redirect('/login')
+
+@app.route("/login", methods=["GET"])
+def login_page():
+    if session.get('authenticated'):
+        return redirect('/')
+    return render_template("login.html", site=SITE_NAME)
+
+@app.route("/login", methods=["POST"])
+def login_post():
+    data = request.get_json(silent=True) or {}
+    pwd = data.get("password", "")
+    if pwd == PANEL_PASSWORD:
+        session['authenticated'] = True
+        return jsonify({"ok": True}), 200
+    return jsonify({"ok": False, "error": "Senha incorreta"}), 401
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"ok": True}), 200
 
 def validate_admin_token() -> bool:
     """Valida o token de admin do header X-ADMIN-TOKEN."""
@@ -2136,17 +2171,33 @@ def _check_connectivity() -> bool:
     except Exception:
         return False
 
-def _send_server_heartbeat():
-    """Pinga cada plaquinha do cache e atualiza servidor_online no banco se ela responder."""
+def _measure_wifi_speed() -> float:
+    """Mede velocidade de download em Mbps (2MB via Cloudflare)."""
     try:
+        import urllib.request
+        url = "https://speed.cloudflare.com/__down?bytes=2000000"
+        start = time.time()
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            data = resp.read()
+        elapsed = time.time() - start
+        if elapsed > 0 and len(data) > 0:
+            return round((len(data) * 8) / (elapsed * 1_000_000), 2)
+    except Exception as e:
+        log(f"[SPEED] Erro ao medir velocidade: {e}")
+    return 0.0
+
+def _send_server_heartbeat():
+    """Mede velocidade, pinga cada plaquinha e atualiza servidor_online se ela responder."""
+    try:
+        speed = _measure_wifi_speed()
         cache = load_devices_cache()
         device_ids = [k for k in cache if not k.startswith("_")]
         for dev_id in device_ids:
             try:
-                update_device_heartbeat(dev_id)
+                update_device_heartbeat(dev_id, internet_speed_mbps=speed if speed > 0 else None)
             except Exception as e:
                 log(f"[HEARTBEAT] Erro ao pingar {dev_id}: {e}")
-        log(f"[HEARTBEAT] Ping concluído: {len(device_ids)} device(s)")
+        log(f"[HEARTBEAT] Ping concluído: {len(device_ids)} device(s), speed={speed} Mbps")
     except Exception as e:
         log(f"[HEARTBEAT] Erro: {e}")
 
@@ -3462,6 +3513,57 @@ def api_sync_devices():
         log(f"[ERRO] API /tuya/sync: {err}")
         traceback.print_exc()
         return jsonify({"ok": False, "error": err}), 500
+
+@app.route("/api/system/health", methods=["GET"])
+def api_system_health():
+    try:
+        with open("/proc/loadavg") as f:
+            load_1 = float(f.read().split()[0])
+        with open("/proc/meminfo") as f:
+            mem = {}
+            for line in f:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    mem[k.strip()] = int(v.strip().split()[0])
+        mem_pct = round((mem["MemTotal"] - mem["MemAvailable"]) / mem["MemTotal"] * 100, 1)
+        df = subprocess.run(["df", "-h", "/"], capture_output=True, text=True, timeout=5)
+        disk_parts = df.stdout.splitlines()[-1].split()
+        disk_used, disk_total, disk_pct = disk_parts[2], disk_parts[1], disk_parts[4]
+        temp = 0.0
+        try:
+            with open("/sys/class/thermal/thermal_zone0/temp") as f:
+                temp = round(int(f.read().strip()) / 1000, 1)
+        except Exception:
+            pass
+        with open("/proc/uptime") as f:
+            secs = int(float(f.read().split()[0]))
+        uptime = f"{secs // 3600}h {(secs % 3600) // 60}m"
+        return jsonify({
+            "load": load_1, "ram_pct": mem_pct,
+            "disk_used": disk_used, "disk_total": disk_total, "disk_pct": disk_pct,
+            "temp_c": temp, "uptime": uptime
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/system/restart-service", methods=["POST"])
+def api_system_restart_service():
+    subprocess.Popen(["sudo", "systemctl", "restart", "mrit-server"])
+    return jsonify({"ok": True, "message": "Reiniciando serviço..."}), 200
+
+@app.route("/api/system/reboot", methods=["POST"])
+def api_system_reboot():
+    subprocess.Popen(["sudo", "reboot"])
+    return jsonify({"ok": True, "message": "Reiniciando Pi..."}), 200
+
+@app.route("/api/system/logs", methods=["GET"])
+def api_system_logs():
+    n = min(int(request.args.get("lines", 80)), 200)
+    r = subprocess.run(
+        ["sudo", "journalctl", "-u", "mrit-server", f"-n{n}", "--no-pager", "--output=short"],
+        capture_output=True, text=True, timeout=10
+    )
+    return jsonify({"logs": r.stdout}), 200
 
 def start_server(host="0.0.0.0", port=8000):
     """Inicia o servidor Flask"""

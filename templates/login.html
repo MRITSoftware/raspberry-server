@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MRIT Server — Login</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+        .box { background: #1e293b; border-radius: 20px; padding: 40px 36px; width: 100%; max-width: 380px; box-shadow: 0 24px 48px rgba(0,0,0,0.4); }
+        .logo { text-align: center; margin-bottom: 32px; }
+        .logo-badge { display: inline-flex; align-items: center; gap: 10px; }
+        .logo-icon { width: 48px; height: 48px; background: #e94560; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        .logo-text { text-align: left; }
+        .logo-text .title { font-size: 20px; font-weight: 800; color: white; letter-spacing: 0.5px; }
+        .logo-text .sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+        h2 { font-size: 15px; font-weight: 600; color: #94a3b8; margin-bottom: 20px; text-align: center; }
+        label { display: block; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        input { width: 100%; padding: 13px 16px; background: #0f172a; border: 1px solid #334155; border-radius: 10px; color: white; font-size: 15px; outline: none; transition: border-color .15s; margin-bottom: 16px; }
+        input:focus { border-color: #e94560; }
+        button { width: 100%; padding: 13px; background: #e94560; color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; transition: opacity .15s; }
+        button:hover { opacity: 0.88; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .err { background: #450a0a; color: #fca5a5; padding: 11px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: none; }
+        footer { margin-top: 32px; font-size: 12px; color: #334155; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <div class="logo">
+            <div class="logo-badge">
+                <div class="logo-icon">❄️</div>
+                <div class="logo-text">
+                    <div class="title">MRIT Server</div>
+                    <div class="sub">Painel de Controle</div>
+                </div>
+            </div>
+        </div>
+        <h2>Acesso Restrito</h2>
+        <div class="err" id="err-msg"></div>
+        <label>Senha</label>
+        <input type="password" id="pwd" placeholder="Digite a senha do painel" autofocus onkeydown="if(event.key==='Enter')doLogin()" />
+        <button id="btn-login" onclick="doLogin()">Entrar</button>
+    </div>
+    <footer>© GelaFit — Tecnologia MRIT</footer>
+
+    <script>
+    async function doLogin() {
+        const pwd = document.getElementById('pwd').value;
+        const btn = document.getElementById('btn-login');
+        const err = document.getElementById('err-msg');
+        btn.disabled = true; btn.textContent = 'Verificando...';
+        err.style.display = 'none';
+        try {
+            const r = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pwd })
+            });
+            const d = await r.json();
+            if (d.ok) {
+                window.location.href = '/';
+            } else {
+                err.textContent = d.error || 'Senha incorreta';
+                err.style.display = 'block';
+                btn.disabled = false; btn.textContent = 'Entrar';
+            }
+        } catch(e) {
+            err.textContent = 'Erro de conexão';
+            err.style.display = 'block';
+            btn.disabled = false; btn.textContent = 'Entrar';
+        }
+    }
+    </script>
+</body>
+</html>
