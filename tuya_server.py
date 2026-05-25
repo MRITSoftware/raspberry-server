@@ -2256,7 +2256,7 @@ def _log_system_metrics(wifi_speed_mbps: float = 0.0) -> None:
             **get_supabase_headers(),
             "Prefer": "resolution=merge-duplicates,return=minimal",
         }
-        r = requests.post(f"{base_url}/pi_system_logs", json=payload, headers=headers, timeout=15)
+        r = requests.post(f"{base_url}/pi_system_logs?on_conflict=site_id", json=payload, headers=headers, timeout=15)
         r.raise_for_status()
         global _LAST_SYSLOG_AT
         _LAST_SYSLOG_AT = now_iso
