@@ -160,19 +160,33 @@ def create_config_if_needed():
         log(f"[OK] config.json criado com site_name = {site} e configuração do banco")
 
 def update_site_name(new_name: str):
-    """Atualiza o nome do site no config.json"""
-    # Carregar config existente
+    """Atualiza o nome do site no config.json e no .env para sobreviver a reinicializações."""
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             cfg = json.load(f)
     else:
         cfg = {}
-    
     cfg["site_name"] = new_name
-    
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=4, ensure_ascii=False)
-    
+
+    env_path = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        new_lines = []
+        found = False
+        for line in lines:
+            if line.startswith("SITE_NAME="):
+                new_lines.append(f"SITE_NAME={new_name}\n")
+                found = True
+            else:
+                new_lines.append(line)
+        if not found:
+            new_lines.append(f"SITE_NAME={new_name}\n")
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
     global SITE_NAME
     SITE_NAME = new_name
     log(f"[OK] site_name atualizado para = {new_name}")
