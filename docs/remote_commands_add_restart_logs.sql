@@ -1,4 +1,4 @@
--- Adiciona as ações 'restart' e 'logs' à tabela remote_commands
+-- Adiciona as ações 'restart', 'logs' e 'update' à tabela remote_commands
 -- Execute no SQL Editor do banco de dados
 
 alter table public.remote_commands
@@ -6,4 +6,4 @@ alter table public.remote_commands
 
 alter table public.remote_commands
   add constraint remote_commands_action_check
-  check (action in ('on', 'off', 'test', 'restart', 'logs'));
+  check (action in ('on', 'off', 'test', 'restart', 'logs', 'update'));
