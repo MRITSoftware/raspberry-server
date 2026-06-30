@@ -1931,7 +1931,14 @@ def _count_devices_in_db() -> int:
         return -1  # -1 = não foi possível verificar
 
 def _is_site_configured() -> bool:
-    return bool(SITE_NAME and SITE_NAME not in ("", "RASPBERRY_PI", "SITE_DESCONHECIDO"))
+    if not SITE_NAME:
+        return False
+    placeholder = ("", "RASPBERRY_PI", "SITE_DESCONHECIDO", "email_da_unidade@exemplo.com")
+    if SITE_NAME in placeholder:
+        return False
+    if SITE_NAME.endswith("@exemplo.com"):
+        return False
+    return True
 
 def _check_site_exists_in_db(email: str) -> bool:
     """Verifica se já existe algum registro no banco para este e-mail/site."""
