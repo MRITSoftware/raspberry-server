@@ -141,7 +141,7 @@
     </div>
     <div class="header-right">
         <div class="site-pill" id="header-site">carregando...</div>
-        <button class="btn-logout" title="Alterar e-mail da unidade" onclick="setupOpen()" style="font-size:14px;padding:5px 9px;">✏️</button>
+        <button class="btn-logout" title="Alterar e-mail da unidade" onclick="setupOpen(true)" style="font-size:14px;padding:5px 9px;">✏️</button>
         <button class="btn-logout" onclick="doLogout()">Sair</button>
     </div>
 </header>
@@ -278,8 +278,11 @@
 <!-- Modal: configuração inicial de e-mail (primeiro acesso) -->
 <div class="modal-bg" id="setup-modal">
     <div class="modal">
-        <h3>Configurar Unidade</h3>
-        <p class="sub" style="margin-bottom:16px;">Primeiro acesso — informe o e-mail desta unidade GelaFit.</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <h3 style="margin:0;">Configurar Unidade</h3>
+            <button id="btn-setup-close" onclick="setupClose()" style="display:none;background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;line-height:1;padding:0 2px;" title="Fechar">✕</button>
+        </div>
+        <p class="sub" style="margin-bottom:16px;">Informe o e-mail desta unidade GelaFit.</p>
         <div id="setup-step-1">
             <div class="field">
                 <label>E-mail da Unidade</label>
@@ -350,9 +353,18 @@ async function doLogout() {
 let _setupEmail = '';
 let _setupForce = false;
 
-function setupOpen() {
+function setupOpen(allowClose = false) {
+    document.getElementById('btn-setup-close').style.display = allowClose ? 'block' : 'none';
+    document.getElementById('setup-step-1').style.display = 'block';
+    document.getElementById('setup-step-2').style.display = 'none';
+    document.getElementById('setup-msg').innerHTML = '';
+    document.getElementById('setup-email').value = '';
     document.getElementById('setup-modal').classList.add('open');
     setTimeout(() => document.getElementById('setup-email').focus(), 150);
+}
+
+function setupClose() {
+    document.getElementById('setup-modal').classList.remove('open');
 }
 
 function setupBack() {
