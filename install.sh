@@ -19,12 +19,7 @@ echo "      Dependências instaladas."
 if [ ! -f .env ]; then
     echo "[2/4] Criando .env..."
     cp .env.example .env
-    echo ""
-    echo "      *** ATENÇÃO ***"
-    echo "      Edite o arquivo .env e defina o SITE_NAME (email da unidade)."
-    echo "      Comando: nano .env"
-    echo ""
-    read -p "      Pressione Enter após salvar o .env para continuar..."
+    echo "      .env criado. O e-mail da unidade será configurado no primeiro acesso ao painel web."
 else
     echo "[2/4] Arquivo .env já existe, pulando."
 fi
@@ -90,8 +85,11 @@ fi
 echo ""
 echo "=== Instalação concluída! ==="
 echo ""
+echo "Próximo passo: acesse o painel web e configure o e-mail da unidade."
+echo "  http://gelafit-pi.local"
+echo ""
 echo "Comandos úteis:"
 echo "  sudo systemctl status mrit-server      — status do serviço"
 echo "  sudo journalctl -u mrit-server -f      — logs em tempo real"
-echo "  sudo systemctl restart mrit-server     — reiniciar após mudanças no .env"
+echo "  sudo systemctl restart mrit-server     — reiniciar o serviço"
 echo "  curl http://localhost/health            — testar se está rodando"

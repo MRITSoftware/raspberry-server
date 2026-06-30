@@ -257,6 +257,12 @@
         </div>
         <div id="sys-msg"></div>
         <hr class="section-divider">
+        <div class="card-title" style="margin-bottom:10px;">Atualizações</div>
+        <div class="actions" style="margin-bottom:8px;">
+            <button class="btn btn-ghost" id="btn-check-update" onclick="checkUpdate()">Verificar Atualizações</button>
+        </div>
+        <div id="update-msg"></div>
+        <hr class="section-divider">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
             <div class="card-title">Logs</div>
             <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px;" onclick="loadLogs()">Atualizar</button>
@@ -267,6 +273,31 @@
 </main>
 
 <footer>© GelaFit — <span>Tecnologia MRIT</span></footer>
+
+<!-- Modal: configuração inicial de e-mail (primeiro acesso) -->
+<div class="modal-bg" id="setup-modal">
+    <div class="modal">
+        <h3>Configurar Unidade</h3>
+        <p class="sub" style="margin-bottom:16px;">Primeiro acesso — informe o e-mail desta unidade GelaFit.</p>
+        <div id="setup-step-1">
+            <div class="field">
+                <label>E-mail da Unidade</label>
+                <input type="email" id="setup-email" placeholder="unidade@gelafit.com.br" autocomplete="off" onkeydown="if(event.key==='Enter')setupCheckEmail()">
+            </div>
+            <div id="setup-msg"></div>
+            <div class="modal-actions" style="margin-top:16px;">
+                <button class="btn btn-primary" id="btn-setup-check" onclick="setupCheckEmail()" style="flex:1;justify-content:center;">Verificar</button>
+            </div>
+        </div>
+        <div id="setup-step-2" style="display:none;">
+            <div id="setup-confirm-box"></div>
+            <div class="modal-actions" style="margin-top:16px;">
+                <button class="btn btn-ghost" onclick="setupBack()">Voltar</button>
+                <button class="btn btn-success" id="btn-setup-confirm" onclick="setupSaveEmail(false)" style="flex:1;justify-content:center;">Confirmar mesmo assim</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Modal: cadastro de dispositivo -->
 <div class="modal-bg" id="register-modal">
@@ -314,11 +345,123 @@ async function doLogout() {
     window.location.href = '/login';
 }
 
+// ── Setup (primeiro acesso) ───────────────────────────
+let _setupEmail = '';
+let _setupForce = false;
+
+function setupOpen() {
+    document.getElementById('setup-modal').classList.add('open');
+    setTimeout(() => document.getElementById('setup-email').focus(), 150);
+}
+
+function setupBack() {
+    document.getElementById('setup-step-2').style.display = 'none';
+    document.getElementById('setup-step-1').style.display = 'block';
+    document.getElementById('setup-msg').innerHTML = '';
+}
+
+async function setupCheckEmail() {
+    const email = document.getElementById('setup-email').value.trim().toLowerCase();
+    const msg = document.getElementById('setup-msg');
+    const btn = document.getElementById('btn-setup-check');
+    if (!email || !email.includes('@')) {
+        msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">E-mail inválido.</div>';
+        return;
+    }
+    _setupEmail = email;
+    btn.disabled = true; btn.textContent = 'Verificando...';
+    msg.innerHTML = '';
+    try {
+        const r = await fetch('/api/setup/email', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ email, force: false }) });
+        const d = await r.json();
+        if (d.ok) {
+            document.getElementById('setup-modal').classList.remove('open');
+            document.getElementById('header-site').textContent = email;
+            location.reload();
+        } else if (d.exists) {
+            document.getElementById('setup-step-1').style.display = 'none';
+            document.getElementById('setup-confirm-box').innerHTML =
+                `<div class="msg msg-warn">${d.message}</div>`;
+            document.getElementById('setup-step-2').style.display = 'block';
+        } else {
+            msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${esc(d.error || 'desconhecido')}</div>`;
+        }
+    } catch(e) {
+        msg.innerHTML = `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`;
+    }
+    btn.disabled = false; btn.textContent = 'Verificar';
+}
+
+async function setupSaveEmail() {
+    const btn = document.getElementById('btn-setup-confirm');
+    btn.disabled = true; btn.textContent = 'Salvando...';
+    try {
+        const r = await fetch('/api/setup/email', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ email: _setupEmail, force: true }) });
+        const d = await r.json();
+        if (d.ok) {
+            document.getElementById('setup-modal').classList.remove('open');
+            location.reload();
+        } else {
+            document.getElementById('setup-confirm-box').innerHTML += `<div class="msg msg-err" style="margin-top:8px;">Erro: ${esc(d.error || 'desconhecido')}</div>`;
+        }
+    } catch(e) {
+        document.getElementById('setup-confirm-box').innerHTML += `<div class="msg msg-err" style="margin-top:8px;">Erro: ${e.message}</div>`;
+    }
+    btn.disabled = false; btn.textContent = 'Confirmar mesmo assim';
+}
+
+// ── Atualizações ──────────────────────────────────────
+async function checkUpdate() {
+    const btn = document.getElementById('btn-check-update');
+    const msg = document.getElementById('update-msg');
+    btn.disabled = true; btn.textContent = 'Verificando...';
+    msg.innerHTML = '';
+    try {
+        const d = await get('/api/system/check-update');
+        if (!d.ok) {
+            msg.innerHTML = `<div class="msg msg-err">Erro ao verificar: ${esc(d.error)}</div>`;
+        } else if (d.has_update) {
+            msg.innerHTML = `<div class="msg msg-warn">
+                Nova atualização disponível! (${d.commits_behind} commit${d.commits_behind!==1?'s':''} atrás — atual: ${d.current}, mais recente: ${d.latest})
+                <br><button class="btn btn-success" style="margin-top:10px;" id="btn-apply-update" onclick="applyUpdate()">Atualizar Agora</button>
+            </div>`;
+        } else {
+            msg.innerHTML = `<div class="msg msg-ok">Você está na versão mais recente (${d.current}).</div>`;
+        }
+    } catch(e) {
+        msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
+    }
+    btn.disabled = false; btn.textContent = 'Verificar Atualizações';
+}
+
+async function applyUpdate() {
+    if (!confirm('Aplicar atualização? O serviço será reiniciado automaticamente.')) return;
+    const btn = document.getElementById('btn-apply-update');
+    const msg = document.getElementById('update-msg');
+    if (btn) { btn.disabled = true; btn.textContent = 'Atualizando...'; }
+    try {
+        const r = await fetch('/api/system/update', { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) {
+            msg.innerHTML = `<div class="msg msg-ok">${esc(d.message)}<br><small style="font-family:monospace;">${esc(d.output || '')}</small></div>`;
+        } else {
+            msg.innerHTML = `<div class="msg msg-err">Falha na atualização: ${esc(d.error)}</div>`;
+            if (btn) { btn.disabled = false; btn.textContent = 'Tentar Novamente'; }
+        }
+    } catch(e) {
+        msg.innerHTML = `<div class="msg msg-err">Erro: ${e.message}</div>`;
+        if (btn) { btn.disabled = false; btn.textContent = 'Tentar Novamente'; }
+    }
+}
+
 // ── Status ────────────────────────────────────────────
 async function loadStatus() {
     try {
         const d = await get('/api/status');
         document.getElementById('header-site').textContent = d.site || '—';
+        if (d.needs_setup) {
+            setupOpen();
+        }
         set('st-server',   dot('green') + 'Online');
         set('st-banco', d.db_configured ? dot('green') + 'OK' : dot('red') + 'Não configurado');
         set('st-realtime', d.realtime_connected   ? dot('green') + 'Conectado' : dot('yellow') + 'Conectando...');
@@ -701,7 +844,7 @@ async function get(url) {
     return r.json();
 }
 
-// Fechar modais clicando fora
+// Fechar modais clicando fora (setup-modal é intencional sem fechar — força configuração)
 document.getElementById('wifi-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
 document.getElementById('register-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeRegisterModal(); });
 

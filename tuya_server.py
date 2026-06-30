@@ -143,7 +143,7 @@ def load_config_from_env() -> Dict[str, Any]:
 def create_config_if_needed():
     """Cria o config.json com nome do site/tablet."""
     if not os.path.exists(CONFIG_PATH):
-        site = os.getenv("SITE_NAME", "RASPBERRY_PI")
+        site = os.getenv("SITE_NAME", "")
         
         cfg = {
             "site_name": site,
@@ -1930,6 +1930,48 @@ def _count_devices_in_db() -> int:
     except Exception:
         return -1  # -1 = não foi possível verificar
 
+def _is_site_configured() -> bool:
+    return bool(SITE_NAME and SITE_NAME not in ("", "RASPBERRY_PI", "SITE_DESCONHECIDO"))
+
+def _check_site_exists_in_db(email: str) -> bool:
+    """Verifica se já existe algum registro no banco para este e-mail/site."""
+    if not REQUESTS_AVAILABLE or not SUPABASE_CONFIG.get("url"):
+        return False
+    try:
+        base_url = get_supabase_url()
+        headers = {**get_supabase_headers(), "Prefer": "count=exact", "Range": "0-0"}
+        url = f"{base_url}/pi_system_logs?site_id=eq.{email}&select=site_id"
+        r = requests.get(url, headers=headers, timeout=8)
+        content_range = r.headers.get("Content-Range", "")
+        if "/" in content_range:
+            total = content_range.split("/")[-1]
+            return int(total) > 0 if total.isdigit() else False
+        data = r.json()
+        return isinstance(data, list) and len(data) > 0
+    except Exception:
+        return False
+
+@app.route("/api/setup/email", methods=["POST"])
+def api_setup_email():
+    data = request.get_json(silent=True) or {}
+    email = data.get("email", "").strip().lower()
+    force = data.get("force", False)
+
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
+        return jsonify({"ok": False, "error": "E-mail inválido"}), 400
+
+    exists = _check_site_exists_in_db(email)
+
+    if exists and not force:
+        return jsonify({
+            "ok": False,
+            "exists": True,
+            "message": "Já existe uma unidade cadastrada com este e-mail. Deseja continuar? Os dados atuais serão vinculados a este Pi e o registro anterior será sobrescrito."
+        }), 200
+
+    update_site_name(email)
+    return jsonify({"ok": True, "created": not exists}), 200
+
 @app.route("/api/status", methods=["GET"])
 def api_status():
     cache = load_devices_cache()
@@ -1937,6 +1979,7 @@ def api_status():
     devices_in_db = _count_devices_in_db()
     return jsonify({
         "site": SITE_NAME,
+        "needs_setup": not _is_site_configured(),
         "version": APP_VERSION,
         "db_configured": bool(SUPABASE_CONFIG.get("url") and SUPABASE_CONFIG.get("anon_key")),
         "realtime_connected": REMOTE_COMMAND_WS_APP is not None,
@@ -2840,6 +2883,21 @@ def execute_remote_command_action(record: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {"logs": r.stdout[-4000:]}
 
+    if action == "update":
+        log("[REMOTE] Comando update recebido — executando git pull...")
+        result = subprocess.run(["git", "pull"], capture_output=True, text=True, timeout=60, cwd=BASE_DIR)
+        if result.returncode == 0:
+            log(f"[REMOTE] git pull OK: {result.stdout.strip()}")
+            def _restart_after_update():
+                time.sleep(4)
+                subprocess.Popen(["sudo", "systemctl", "restart", "mrit-server"])
+            threading.Thread(target=_restart_after_update, daemon=True).start()
+            return {"message": "Atualização aplicada. Reiniciando em 4s...", "output": result.stdout.strip()[-2000:]}
+        else:
+            err = result.stderr.strip() or result.stdout.strip()
+            log(f"[REMOTE] git pull falhou: {err}")
+            raise RuntimeError(f"git pull falhou: {err}")
+
     raise ValueError(f"Ação remota inválida: {action}")
 
 def get_supabase_realtime_url() -> str:
@@ -3667,6 +3725,48 @@ def api_system_logs():
         capture_output=True, text=True, timeout=10
     )
     return jsonify({"logs": r.stdout}), 200
+
+@app.route("/api/system/check-update", methods=["GET"])
+def api_system_check_update():
+    try:
+        subprocess.run(["git", "fetch", "--quiet"], capture_output=True, timeout=20, cwd=BASE_DIR)
+        local_r = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5, cwd=BASE_DIR)
+        remote_r = subprocess.run(["git", "rev-parse", "origin/main"], capture_output=True, text=True, timeout=5, cwd=BASE_DIR)
+        local = local_r.stdout.strip()
+        remote = remote_r.stdout.strip()
+        has_update = bool(local and remote and local != remote)
+        commits_behind = 0
+        if has_update:
+            count_r = subprocess.run(["git", "rev-list", "--count", "HEAD..origin/main"], capture_output=True, text=True, timeout=5, cwd=BASE_DIR)
+            try:
+                commits_behind = int(count_r.stdout.strip())
+            except ValueError:
+                commits_behind = 0
+        return jsonify({
+            "ok": True,
+            "has_update": has_update,
+            "commits_behind": commits_behind,
+            "current": local[:7] if local else "?",
+            "latest": remote[:7] if remote else "?",
+        }), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/system/update", methods=["POST"])
+def api_system_update():
+    try:
+        result = subprocess.run(["git", "pull"], capture_output=True, text=True, timeout=60, cwd=BASE_DIR)
+        if result.returncode == 0:
+            subprocess.Popen(["sudo", "systemctl", "restart", "mrit-server"])
+            return jsonify({
+                "ok": True,
+                "message": "Atualização aplicada! O serviço será reiniciado em instantes...",
+                "output": result.stdout.strip(),
+            }), 200
+        else:
+            return jsonify({"ok": False, "error": result.stderr.strip() or result.stdout.strip()}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 def start_server(host="0.0.0.0", port=8000):
     """Inicia o servidor Flask"""
