@@ -75,7 +75,7 @@ Abra no navegador (qualquer dispositivo na mesma rede):
 http://gelafit-pi.local
 ```
 
-**Senha:** `MRITSERVER#REDEGELAFIT`
+**Senha:** `GELAFIT#REDE`
 
 ---
 
@@ -97,9 +97,23 @@ No primeiro acesso após o login, o painel exibirá automaticamente a tela de co
 
 Se o Pi não estiver conectado a uma rede WiFi:
 
-1. Conecte ao hotspot **MRIT-Setup** (senha: `mrit1234`)
+1. Conecte ao hotspot **GelaFit-Setup** (senha: `rede#gelafit@123`)
 2. Acesse `http://192.168.4.1`
 3. Vá em **WiFi** → **Buscar Redes** → conecte à rede desejada
+
+### Resgate se o WiFi falhar
+
+A versao `1.0-PI-wifi-rescue` tem protecoes para evitar formatar o cartao SD:
+
+- Antes de trocar ou salvar rede, o painel pede confirmacao e permite mostrar a senha digitada.
+- Se a troca de WiFi falhar, o Pi tenta restaurar automaticamente o hotspot `GelaFit-Setup` / `rede#gelafit@123`.
+- Se a rede reserva falhar ou ficar sem internet, o Pi tambem volta para o hotspot.
+
+Para uma unidade que ja ficou presa antes dessa versao, tente primeiro:
+
+1. Reiniciar o Pi e aguardar ate 4 minutos pelo hotspot `GelaFit-Setup`.
+2. Se nao voltar, ligar cabo de rede no roteador, descobrir o IP no roteador e acessar `http://IP_DO_PI`.
+3. Se conseguir SSH: `ssh mrit@IP_DO_PI` e depois `sudo systemctl restart mrit-server`.
 
 ---
 
@@ -201,8 +215,8 @@ LIMIT 10;
 | Item | Valor |
 |------|-------|
 | Usuário do Pi | `mrit` |
-| Senha do painel web | `MRITSERVER#REDEGELAFIT` |
-| Hotspot de configuração | `MRIT-Setup` / senha `mrit1234` |
+| Senha do painel web | `GELAFIT#REDE` |
+| Hotspot de configuração | `GelaFit-Setup` / senha `rede#gelafit@123` |
 | Endereço local | `http://gelafit-pi.local` |
 | Endereço via hotspot | `http://192.168.4.1` |
 | Repositório | https://github.com/MRITSoftware/raspberry-server |

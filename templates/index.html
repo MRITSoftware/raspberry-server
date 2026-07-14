@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MRIT Server</title>
+    <title>GelaFit</title>
     <link rel="icon" type="image/png" href="/static/logo.png">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -91,6 +91,10 @@
         .field label { display: block; font-size: 11px; color: #94a3b8; font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
         .field input { width: 100%; padding: 9px 12px; border: 1px solid #e2e8f0; border-radius: 9px; font-size: 13px; outline: none; background: white; transition: border-color .15s; }
         .field input:focus { border-color: #2d6dc8; }
+        .password-field { position: relative; }
+        .password-field input { padding-right: 54px; }
+        .password-toggle { position: absolute; right: 5px; bottom: 5px; height: 28px; min-width: 42px; border: none; border-radius: 7px; background: #f1f5f9; color: #475569; font-size: 11px; font-weight: 700; cursor: pointer; }
+        .password-toggle:hover { background: #e2e8f0; }
         .input-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 
         /* ── Messages ── */
@@ -136,8 +140,8 @@
 
 <header>
     <div class="header-left">
-        <div class="header-logo"><img src="/static/logo.png" alt="MRIT"></div>
-        <div class="header-title">MRIT Server <span style="font-weight:400;opacity:0.5;margin:0 4px;">•</span> GelaFit</div>
+        <div class="header-logo"><img src="/static/logo.png" alt="GelaFit"></div>
+        <div class="header-title">GelaFit <span style="font-weight:400;opacity:0.5;margin:0 4px;">•</span> Painel Local</div>
     </div>
     <div class="header-right">
         <div class="site-pill" id="header-site">carregando...</div>
@@ -201,9 +205,10 @@
                 <label>SSID</label>
                 <input id="manual-ssid" type="text" placeholder="Nome da rede">
             </div>
-            <div class="field" style="flex:1;min-width:150px;">
+            <div class="field password-field" style="flex:1;min-width:150px;">
                 <label>Senha</label>
                 <input id="manual-password" type="password" placeholder="Senha (vazio se aberta)">
+                <button class="password-toggle" type="button" onclick="togglePassword('manual-password', this)">Ver</button>
             </div>
             <button class="btn btn-success" id="btn-manual-connect" onclick="connectManual()" style="margin-bottom:0;">Conectar</button>
         </div>
@@ -217,9 +222,10 @@
                 <label>SSID</label>
                 <input id="backup-ssid" type="text" placeholder="Nome da rede reserva">
             </div>
-            <div class="field" style="flex:1;min-width:150px;">
+            <div class="field password-field" style="flex:1;min-width:150px;">
                 <label>Senha</label>
                 <input id="backup-password" type="password" placeholder="Senha (opcional)">
+                <button class="password-toggle" type="button" onclick="togglePassword('backup-password', this)">Ver</button>
             </div>
             <button class="btn btn-primary" onclick="saveBackupWifi()" style="margin-bottom:0;">Salvar</button>
         </div>
@@ -231,8 +237,8 @@
         <div class="card-header"><span class="card-title">Hotspot Wi-Fi</span></div>
         <div id="hotspot-status" style="font-size:13px;color:#475569;margin-bottom:14px;">verificando...</div>
         <div class="hs-inputs">
-            <div class="field"><label>Nome da rede (SSID)</label><input id="hs-ssid" type="text" value="MRIT-Setup"></div>
-            <div class="field"><label>Senha (mín. 8 chars)</label><input id="hs-password" type="text" value="mrit1234"></div>
+            <div class="field"><label>Nome da rede (SSID)</label><input id="hs-ssid" type="text" value="GelaFit-Setup"></div>
+            <div class="field"><label>Senha (mín. 8 chars)</label><input id="hs-password" type="text" value="rede#gelafit@123"></div>
         </div>
         <div class="actions">
             <button class="btn btn-success" id="btn-hs-start" onclick="startHotspot()">Ligar Hotspot</button>
@@ -273,7 +279,7 @@
 
 </main>
 
-<footer>© GelaFit — <span>Tecnologia MRIT</span></footer>
+<footer>© GelaFit — <span>Sistema local</span></footer>
 
 <!-- Modal: configuração inicial de e-mail (primeiro acesso) -->
 <div class="modal-bg" id="setup-modal">
@@ -326,9 +332,10 @@
         <h3 id="modal-ssid-title">Conectar à rede</h3>
         <div class="sub" id="modal-ssid-sub"></div>
         <div class="warn-box">⚠️ O Pi mudará de rede Wi-Fi. A conexão com este painel será interrompida. Reconecte pelo mesmo endereço após a troca.</div>
-        <div class="field">
+        <div class="field password-field">
             <label>Senha</label>
             <input type="password" id="modal-password" placeholder="Senha (deixe vazio se aberta)">
+            <button class="password-toggle" type="button" onclick="togglePassword('modal-password', this)">Ver</button>
         </div>
         <div id="modal-msg"></div>
         <div class="modal-actions">
@@ -342,6 +349,34 @@
 let selectedSsid = '';
 let currentSsid  = '';
 let registerDeviceId = '';
+
+function togglePassword(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.textContent = show ? 'Ocultar' : 'Ver';
+}
+
+function confirmWifiAction(title, ssid, password, extraText = '') {
+    const shownPassword = password ? password : '(sem senha)';
+    return confirm(`${title}\n\nRede: ${ssid}\nSenha: ${shownPassword}\n\nConfira se a senha esta correta antes de continuar.${extraText ? '\n\n' + extraText : ''}`);
+}
+
+function installPasswordToggle(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const field = input.closest('.field');
+    if (!field || field.querySelector('.password-toggle')) return;
+    field.classList.add('password-field');
+    input.type = 'password';
+    const btn = document.createElement('button');
+    btn.className = 'password-toggle';
+    btn.type = 'button';
+    btn.textContent = 'Ver';
+    btn.onclick = () => togglePassword(inputId, btn);
+    field.appendChild(btn);
+}
 
 // ── Auth ──────────────────────────────────────────────
 async function doLogout() {
@@ -623,6 +658,7 @@ async function connectWifi() {
     const password = document.getElementById('modal-password').value;
     const btn = document.getElementById('btn-modal-connect');
     const msg = document.getElementById('modal-msg');
+    if (!confirmWifiAction('Confirmar troca de Wi-Fi?', selectedSsid, password, 'Se falhar, o hotspot GelaFit-Setup deve voltar em ate 2 minutos.')) return;
     btn.disabled = true; btn.textContent = 'Conectando...';
     msg.innerHTML = '';
     try {
@@ -640,6 +676,7 @@ async function connectManual() {
     const btn = document.getElementById('btn-manual-connect');
     const msg = document.getElementById('manual-msg');
     if (!ssid) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">SSID obrigatório.</div>'; return; }
+    if (!confirmWifiAction('Confirmar troca de Wi-Fi?', ssid, password, 'Se falhar, o hotspot GelaFit-Setup deve voltar em ate 2 minutos.')) return;
     btn.disabled = true; btn.textContent = 'Conectando...';
     msg.innerHTML = '';
     try {
@@ -667,6 +704,7 @@ async function saveBackupWifi() {
     const password = document.getElementById('backup-password').value;
     const msg = document.getElementById('backup-msg');
     if (!ssid) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">SSID obrigatório.</div>'; return; }
+    if (!confirmWifiAction('Salvar rede reserva?', ssid, password, 'Essa rede sera usada automaticamente se a internet cair.')) return;
     try {
         const r = await fetch('/api/wifi/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ssid, password }) });
         const d = await r.json();
@@ -684,7 +722,7 @@ async function loadHotspotStatus() {
         const start = document.getElementById('btn-hs-start');
         const stop  = document.getElementById('btn-hs-stop');
         if (d.active) {
-            el.innerHTML = `<b style="color:#065f46;">● Hotspot ativo:</b> ${document.getElementById('hs-ssid').value || 'MRIT-Setup'}`;
+            el.innerHTML = `<b style="color:#065f46;">● Hotspot ativo:</b> ${document.getElementById('hs-ssid').value || 'GelaFit-Setup'}`;
             start.style.display = 'none'; stop.style.display = 'inline-flex';
         } else {
             el.innerHTML = '<span style="color:#94a3b8;">● Hotspot desligado</span>';
@@ -829,7 +867,7 @@ function showConnectingScreen(ssid) {
         <div class="ov-sub">aguarde até <span id="oc-secs">${secs}</span> segundos...</div>
         <div class="ov-box">
             <b>O que vai acontecer:</b><br>
-            • O hotspot <b>MRIT-Setup</b> vai desligar<br>
+            • O hotspot <b>GelaFit-Setup</b> vai desligar<br>
             • O Pi vai conectar ao Wi-Fi <b>"${esc(ssid)}"</b><br>
             • Reconecte ao <b>"${esc(ssid)}"</b> e veja o IP no roteador<br>
             • Se o hotspot voltar, a senha estava errada
@@ -839,7 +877,7 @@ function showConnectingScreen(ssid) {
         secs--;
         const el = document.getElementById('oc-secs');
         if (el) el.textContent = secs;
-        if (secs <= 0) { clearInterval(t); overlay.querySelector('.ov-sub').textContent = 'Se o hotspot voltou, a senha estava errada. Reconecte ao MRIT-Setup e tente novamente.'; }
+        if (secs <= 0) { clearInterval(t); overlay.querySelector('.ov-sub').textContent = 'Se o hotspot voltou, a senha estava errada. Reconecte ao GelaFit-Setup e tente novamente.'; }
     }, 1000);
 }
 
@@ -862,6 +900,7 @@ document.getElementById('wifi-modal').addEventListener('click', e => { if (e.tar
 document.getElementById('register-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeRegisterModal(); });
 
 // Init
+installPasswordToggle('hs-password');
 loadStatus();
 loadWifiCurrent();
 loadHotspotStatus();

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== MRIT Server - Instalação no Raspberry Pi ==="
+echo "=== GelaFit - Instalação no Raspberry Pi ==="
 
 # Verificar Python 3
 if ! command -v python3 &> /dev/null; then
@@ -32,7 +32,7 @@ CURRENT_USER="$(whoami)"
 
 sudo tee /etc/systemd/system/mrit-server.service > /dev/null << EOF
 [Unit]
-Description=MRIT Tuya Server
+Description=GelaFit Local Server
 After=network-online.target
 Wants=network-online.target
 

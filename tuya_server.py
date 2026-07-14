@@ -7,7 +7,7 @@ import threading
 import time
 import socket
 import subprocess
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse
 
@@ -88,7 +88,7 @@ COMMAND_PREFLIGHT_TIMEOUT_SECONDS = 8
 COMMAND_ACTION_TIMEOUT_SECONDS = 20
 REFRESH_FAIL_COUNTS: Dict[str, int] = {}
 REFRESH_LAST_STATUS: Dict[str, bool] = {}
-APP_VERSION = "1.0-PI"
+APP_VERSION = "1.0-PI-wifi-rescue"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -1870,7 +1870,7 @@ def send_tuya_command(
 app = Flask(__name__)
 app.secret_key = b'mrit-gelafit-server-secret-2024'
 
-PANEL_PASSWORD = "MRITSERVER#REDEGELAFIT"
+PANEL_PASSWORD = "GELAFIT#REDE"
 
 @app.before_request
 def check_auth():
@@ -2068,6 +2068,9 @@ def _nmcli(*args, sudo=False, timeout=30) -> subprocess.CompletedProcess:
     cmd = (["sudo", "nmcli"] if sudo else ["nmcli"]) + list(args)
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
+DEFAULT_HOTSPOT_SSID = "GelaFit-Setup"
+DEFAULT_HOTSPOT_PASSWORD = "rede#gelafit@123"
+
 def _parse_nmcli_terse(output: str, num_fields: int) -> List[List[str]]:
     """Divide linhas do nmcli -t respeitando ':' escapados como '\\:'."""
     rows = []
@@ -2090,6 +2093,68 @@ def _parse_nmcli_terse(output: str, num_fields: int) -> List[List[str]]:
         if len(parts) >= num_fields:
             rows.append(parts[:num_fields])
     return rows
+
+def _connected_wifi_ssid() -> str:
+    try:
+        r = _nmcli("-t", "-f", "ACTIVE,SSID,DEVICE", "device", "wifi", timeout=12)
+        for row in _parse_nmcli_terse(r.stdout, 3):
+            if row[0].lower() == "yes" and row[1] and row[2] == "wlan0":
+                return row[1]
+    except Exception as e:
+        log(f"[WIFI] Erro ao consultar SSID ativo: {e}")
+    return ""
+
+def _connect_wifi_profile(ssid: str, password: str, timeout: int = 45) -> Tuple[bool, str]:
+    try:
+        subprocess.run(["sudo", "rfkill", "unblock", "wifi"], capture_output=True, timeout=8)
+        subprocess.run(["sudo", "nmcli", "radio", "wifi", "on"], capture_output=True, timeout=8)
+        subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "yes"], capture_output=True, timeout=10)
+        subprocess.run(["sudo", "ip", "link", "set", "wlan0", "up"], capture_output=True, timeout=8)
+        time.sleep(1)
+
+        # Remove perfis antigos com o mesmo SSID para evitar reaproveitar senha/config invalida.
+        subprocess.run(["sudo", "nmcli", "connection", "delete", ssid], capture_output=True, timeout=10)
+        subprocess.run(["sudo", "nmcli", "connection", "delete", f"netplan-wlan0-{ssid}"], capture_output=True, timeout=10)
+        time.sleep(1)
+
+        args = ["device", "wifi", "connect", ssid]
+        if password:
+            args += ["password", password]
+        r = _nmcli(*args, sudo=True, timeout=timeout)
+        if r.returncode != 0:
+            return False, (r.stderr or r.stdout).strip() or "Falha ao conectar"
+
+        time.sleep(4)
+        active_ssid = _connected_wifi_ssid()
+        if active_ssid != ssid:
+            return False, f"Conexao nao confirmou no wlan0 (ativo: {active_ssid or 'nenhum'})"
+
+        return True, ""
+    except subprocess.TimeoutExpired:
+        return False, "Timeout - verifique a senha e tente novamente"
+    except Exception as e:
+        return False, str(e)
+
+def _ensure_rescue_hotspot(reason: str = "") -> bool:
+    if reason:
+        log(f"[WIFI] Acionando hotspot de resgate: {reason}")
+    for attempt in range(1, 4):
+        ok, err = _start_hotspot_internal(DEFAULT_HOTSPOT_SSID, DEFAULT_HOTSPOT_PASSWORD)
+        if ok:
+            return True
+        log(f"[WIFI] Falha ao iniciar hotspot de resgate ({attempt}/3): {err}")
+        try:
+            subprocess.run(["sudo", "pkill", "-F", HOTSPOT_PID_PATH], capture_output=True, timeout=8)
+            subprocess.run(["sudo", "pkill", "-F", DNSMASQ_PID_PATH], capture_output=True, timeout=8)
+            subprocess.run(["sudo", "rfkill", "unblock", "wifi"], capture_output=True, timeout=8)
+            subprocess.run(["sudo", "ip", "link", "set", "wlan0", "down"], capture_output=True, timeout=8)
+            time.sleep(1)
+            subprocess.run(["sudo", "ip", "link", "set", "wlan0", "up"], capture_output=True, timeout=8)
+        except Exception as e:
+            log(f"[WIFI] Erro no preparo do retry do hotspot: {e}")
+        time.sleep(3)
+    log("[WIFI] Hotspot de resgate nao iniciou apos 3 tentativas")
+    return False
 
 @app.route("/api/wifi/status", methods=["GET"])
 def api_wifi_status():
@@ -2163,24 +2228,18 @@ def api_wifi_connect():
             time.sleep(0.8)  # garante que a resposta HTTP foi entregue ao cliente
             _stop_hotspot_internal()
             time.sleep(2)
-            try:
-                # Remove perfis antigos (netplan ou outros) com esse SSID para evitar conflito de key-mgmt
-                subprocess.run(["sudo", "nmcli", "connection", "delete", ssid], capture_output=True, timeout=10)
-                subprocess.run(["sudo", "nmcli", "connection", "delete", f"netplan-wlan0-{ssid}"], capture_output=True, timeout=10)
-                time.sleep(1)
-                args = ["device", "wifi", "connect", ssid]
-                if password:
-                    args += ["password", password]
-                r = _nmcli(*args, sudo=True, timeout=45)
-                if r.returncode == 0:
-                    log(f"[WIFI] Conectado a {ssid} (via hotspot)")
-                else:
-                    log(f"[WIFI] Falha ao conectar a {ssid}: {(r.stderr or r.stdout).strip()}")
-                    log("[WIFI] Restaurando hotspot")
-                    _start_hotspot_internal()
-            except Exception as ex:
-                log(f"[WIFI] Erro ao conectar (bg): {ex}")
-                _start_hotspot_internal()
+            ok, err = _connect_wifi_profile(ssid, password, timeout=50)
+            if not ok:
+                log(f"[WIFI] Falha ao conectar a {ssid}: {err}")
+                _ensure_rescue_hotspot("falha na troca de Wi-Fi via hotspot")
+                return
+
+            if _check_connectivity():
+                log(f"[WIFI] Conectado a {ssid} (via hotspot)")
+                threading.Thread(target=_send_server_heartbeat, daemon=True).start()
+            else:
+                log(f"[WIFI] Conectou a {ssid}, mas sem internet; restaurando hotspot")
+                _ensure_rescue_hotspot("Wi-Fi conectado sem internet")
 
         threading.Thread(target=_do_connect_bg, daemon=True).start()
         return jsonify({
@@ -2364,8 +2423,8 @@ def _connectivity_watch_loop():
     # Checagem no boot: aguarda NM conectar e sobe hotspot se não tiver internet
     time.sleep(45)
     if not _check_connectivity() and not _hotspot_running():
-        log("[WIFI] Sem internet no boot — iniciando hotspot automático (MRIT-Setup / mrit1234)")
-        _start_hotspot_internal("MRIT-Setup", "mrit1234")
+        log("[WIFI] Sem internet no boot — iniciando hotspot automático (GelaFit-Setup / rede#gelafit@123)")
+        _ensure_rescue_hotspot("hotspot automatico")
     else:
         # Internet disponível no boot — heartbeat imediato
         threading.Thread(target=_send_server_heartbeat, daemon=True).start()
@@ -2392,17 +2451,21 @@ def _connectivity_watch_loop():
                         if backup.get("password"):
                             args += ["password", backup["password"]]
                         r = _nmcli(*args, sudo=True, timeout=40)
-                        if r.returncode == 0:
+                        if r.returncode == 0 and _check_connectivity():
                             log(f"[WIFI] Conectado à rede reserva: {backup['ssid']}")
                             _CONNECTIVITY_FAIL_COUNT = 0
                             threading.Thread(target=_send_server_heartbeat, daemon=True).start()
                         else:
                             log(f"[WIFI] Falha na reserva: {(r.stderr or r.stdout).strip()}")
+                            _ensure_rescue_hotspot("rede reserva indisponivel")
+                            _CONNECTIVITY_FAIL_COUNT = 0
                     except Exception as e:
                         log(f"[WIFI] Erro ao tentar reserva: {e}")
+                        _ensure_rescue_hotspot("erro na rede reserva")
+                        _CONNECTIVITY_FAIL_COUNT = 0
                 else:
                     log("[WIFI] Sem reserva — subindo hotspot para reconfiguração")
-                    _start_hotspot_internal("MRIT-Setup", "mrit1234")
+                    _ensure_rescue_hotspot("hotspot automatico")
                     _CONNECTIVITY_FAIL_COUNT = 0
 
 HOTSPOT_CONF_PATH   = "/tmp/mrit-hostapd.conf"
@@ -2415,7 +2478,7 @@ def _hotspot_running() -> bool:
     r = subprocess.run(["pgrep", "-F", HOTSPOT_PID_PATH], capture_output=True)
     return r.returncode == 0
 
-def _start_hotspot_internal(ssid: str = "MRIT-Setup", password: str = "mrit1234"):
+def _start_hotspot_internal(ssid: str = "GelaFit-Setup", password: str = "rede#gelafit@123"):
     """Inicia o hotspot via hostapd. Retorna (ok, error_msg)."""
     try:
         try:
@@ -2481,8 +2544,8 @@ def api_hotspot_status():
 @app.route("/api/wifi/hotspot/start", methods=["POST"])
 def api_hotspot_start():
     data     = request.get_json(silent=True) or {}
-    ssid     = data.get("ssid",     "MRIT-Setup").strip() or "MRIT-Setup"
-    password = data.get("password", "mrit1234").strip()
+    ssid     = data.get("ssid",     "GelaFit-Setup").strip() or "GelaFit-Setup"
+    password = data.get("password", "rede#gelafit@123").strip()
     if len(password) < 8:
         return jsonify({"ok": False, "error": "Senha precisa ter pelo menos 8 caracteres"}), 400
     ok, err = _start_hotspot_internal(ssid, password)
