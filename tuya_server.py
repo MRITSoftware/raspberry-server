@@ -2296,16 +2296,28 @@ def _check_connectivity() -> bool:
         return False
 
 def _measure_wifi_speed() -> float:
-    """Mede velocidade de download em Mbps (2MB via Cloudflare)."""
+    """Mede velocidade de download em Mbps usando downloads pequenos com fallback."""
     try:
         import urllib.request
-        url = "https://speed.cloudflare.com/__down?bytes=2000000"
-        start = time.time()
-        with urllib.request.urlopen(url, timeout=15) as resp:
-            data = resp.read()
-        elapsed = time.time() - start
-        if elapsed > 0 and len(data) > 0:
-            return round((len(data) * 8) / (elapsed * 1_000_000), 2)
+        urls = [
+            "https://speed.cloudflare.com/__down?bytes=1000000",
+            "https://proof.ovh.net/files/1Mb.dat",
+            "http://speedtest.tele2.net/1MB.zip",
+        ]
+        for url in urls:
+            try:
+                request_obj = urllib.request.Request(url, headers={"User-Agent": "mrit-server/1.0"})
+                start = time.time()
+                with urllib.request.urlopen(request_obj, timeout=12) as resp:
+                    data = resp.read(1_000_000)
+                elapsed = time.time() - start
+                if elapsed > 0 and len(data) > 0:
+                    speed = round((len(data) * 8) / (elapsed * 1_000_000), 2)
+                    log(f"[SPEED] Velocidade medida: {speed} Mbps via {url}")
+                    return speed
+            except Exception as e:
+                log(f"[SPEED] Falha ao medir via {url}: {e}")
+                continue
     except Exception as e:
         log(f"[SPEED] Erro ao medir velocidade: {e}")
     return 0.0
@@ -2403,7 +2415,7 @@ def _send_server_heartbeat():
         device_ids = [k for k in cache if not k.startswith("_")]
         for dev_id in device_ids:
             try:
-                update_device_heartbeat(dev_id, internet_speed_mbps=speed if speed > 0 else None)
+                update_device_heartbeat(dev_id, internet_speed_mbps=speed)
             except Exception as e:
                 log(f"[HEARTBEAT] Erro ao pingar {dev_id}: {e}")
         log(f"[HEARTBEAT] Ping concluído: {len(device_ids)} device(s), speed={speed} Mbps")
@@ -2982,7 +2994,7 @@ def run_remote_system_test(record: Dict[str, Any]) -> Dict[str, Any]:
                 internet_speed_mbps = _measure_wifi_speed()
                 heartbeat_updated = mark_device_online_in_db(
                     tuya_device_id,
-                    internet_speed_mbps=internet_speed_mbps if internet_speed_mbps > 0 else None
+                    internet_speed_mbps=internet_speed_mbps
                 )
                 if internet_speed_mbps > 0:
                     _log_system_metrics(wifi_speed_mbps=internet_speed_mbps)

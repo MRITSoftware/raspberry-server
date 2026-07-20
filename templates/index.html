@@ -853,7 +853,7 @@ async function testDevice(id) {
         const d = await r.json();
         if (d.ok && d.checks?.device_ping_ok) {
             msg.className = 'device-test-msg msg msg-ok';
-            const speed = d.internet_speed_mbps && d.internet_speed_mbps > 0 ? ` Velocidade: ${Math.round(d.internet_speed_mbps)} Mbps.` : '';
+            const speed = d.internet_speed_mbps !== null && d.internet_speed_mbps !== undefined ? ` Velocidade: ${Math.round(d.internet_speed_mbps)} Mbps.` : '';
             const db = d.heartbeat_updated ? ' Banco atualizado.' : ' Placa OK, mas o banco nao foi atualizado.';
             msg.textContent = 'Plaquinha respondeu na rede local.' + db + speed;
         } else {
