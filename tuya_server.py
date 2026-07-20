@@ -97,6 +97,7 @@ DEVICES_CACHE_PATH = os.path.join(BASE_DIR, "devices_cache.json")
 PENDING_HEARTBEAT_LOGS_PATH = os.path.join(BASE_DIR, "pending_heartbeat_logs.json")
 REMOTE_COMMAND_TABLE = "remote_commands"
 REMOTE_COMMAND_TOPIC = "realtime:remote_commands"
+SYSTEM_EVENT_TABLE = "pi_system_events"
 REMOTE_COMMAND_HEARTBEAT_SECONDS = 20
 REMOTE_COMMAND_RECONNECT_SECONDS = 10
 REMOTE_COMMAND_LISTENER_STARTED = False
@@ -2672,6 +2673,51 @@ def current_timestamp_iso() -> str:
     now_utc = datetime.now(timezone.utc)
     return now_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
 
+def insert_system_event(event_type: str, message: str, data: Optional[Dict[str, Any]] = None) -> bool:
+    """Registra um evento da unidade no Supabase para notificacoes/monitoramento remoto."""
+    if not REQUESTS_AVAILABLE or not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
+        return False
+
+    try:
+        payload = {
+            "site_id": SITE_NAME,
+            "event_type": event_type,
+            "message": message,
+            "data": data or {},
+            "versao": APP_VERSION,
+            "created_at": current_timestamp_iso(),
+        }
+        response = requests.post(
+            f"{get_supabase_url()}/{SYSTEM_EVENT_TABLE}",
+            json=payload,
+            headers=get_supabase_headers(),
+            timeout=15,
+        )
+        response.raise_for_status()
+        log(f"[EVENT] {event_type}: {message}")
+        return True
+    except Exception as e:
+        log(f"[EVENT] Erro ao registrar evento {event_type}: {e}")
+        return False
+
+def announce_server_online(reason: str = "boot") -> None:
+    """Avise a central que o servidor subiu e ja esta processando comandos."""
+    try:
+        metrics = _collect_system_metrics()
+    except Exception:
+        metrics = {}
+
+    insert_system_event(
+        "server_online",
+        "Servidor online e pronto para receber comandos remotos.",
+        {
+            "reason": reason,
+            "hostname": socket.gethostname(),
+            "uptime_seconds": metrics.get("uptime_seconds"),
+            "wifi_ssid": metrics.get("wifi_ssid"),
+        },
+    )
+
 def execute_tuya_command_request(data: Dict[str, Any], command_received_iso: Optional[str] = None) -> Dict[str, Any]:
     """Executa a mesma lógica de /tuya/command para uso via HTTP e comandos remotos."""
     if command_received_iso is None:
@@ -2953,12 +2999,36 @@ def execute_remote_command_action(record: Dict[str, Any]) -> Dict[str, Any]:
         return run_remote_system_test(record)
 
     if action == "restart":
+        insert_system_event(
+            "restart_requested",
+            "Reinicio remoto do servico solicitado.",
+            {"command_id": record.get("id"), "action": action},
+        )
         log("[REMOTE] Comando restart recebido — reiniciando serviço em 4s")
         def _do_restart():
             time.sleep(4)
             subprocess.Popen(["sudo", "systemctl", "restart", "mrit-server"])
         threading.Thread(target=_do_restart, daemon=True).start()
         return {"message": "Serviço reiniciando em 4 segundos..."}
+
+    if action == "reboot":
+        log("[REMOTE] Comando reboot recebido - reiniciando Raspberry em 4s")
+        insert_system_event(
+            "reboot_requested",
+            "Reinicio remoto do Raspberry solicitado.",
+            {"command_id": record.get("id"), "action": action},
+        )
+        def _do_reboot():
+            time.sleep(4)
+            subprocess.Popen(["sudo", "reboot"])
+        threading.Thread(target=_do_reboot, daemon=True).start()
+        return {"message": "Raspberry reiniciando em 4 segundos..."}
+
+    if action == "heartbeat":
+        log("[REMOTE] Comando heartbeat recebido - enviando status agora")
+        _send_server_heartbeat()
+        announce_server_online(reason="remote_heartbeat")
+        return {"message": "Heartbeat enviado.", "site": SITE_NAME, "version": APP_VERSION}
 
     if action == "logs":
         r = subprocess.run(
@@ -2972,6 +3042,14 @@ def execute_remote_command_action(record: Dict[str, Any]) -> Dict[str, Any]:
         result = subprocess.run(["git", "pull"], capture_output=True, text=True, timeout=60, cwd=BASE_DIR)
         if result.returncode == 0:
             log(f"[REMOTE] git pull OK: {result.stdout.strip()}")
+            insert_system_event(
+                "update_applied",
+                "Atualizacao remota aplicada. Servico sera reiniciado.",
+                {
+                    "command_id": record.get("id"),
+                    "output": result.stdout.strip()[-1000:],
+                },
+            )
             def _restart_after_update():
                 time.sleep(4)
                 subprocess.Popen(["sudo", "systemctl", "restart", "mrit-server"])
@@ -3345,6 +3423,22 @@ def api_tuya_command():
         traceback.print_exc()
         return jsonify({"ok": False, "error": err}), 500
 
+@app.route("/tuya/test", methods=["POST"])
+def api_tuya_test():
+    """Testa a comunicacao com a plaquinha sem alterar o estado dela."""
+    try:
+        data: Dict[str, Any] = request.get_json(silent=True) or {}
+        response_data = run_remote_system_test(data)
+        status_code = 200 if response_data.get("ok") else 200
+        return jsonify(response_data), status_code
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        err = str(e)
+        log(f"[ERRO] API /tuya/test: {err}")
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": err}), 500
+
 @app.route("/tuya/devices", methods=["GET"])
 def api_tuya_devices():
     """Retorna lista de dispositivos escaneados na rede"""
@@ -3491,10 +3585,15 @@ def api_register_single_device():
     try:
         data = request.get_json(silent=True) or {}
         device_id = data.get("device_id", "").strip()
-        site_id   = data.get("site_id", "").strip() or SITE_NAME
+        raw_site_id = data.get("site_id", "").strip()
+        site_id   = raw_site_id or SITE_NAME
+        local_only = bool(data.get("local_only")) or (not raw_site_id and not _is_site_configured())
 
         if not device_id:
             return jsonify({"ok": False, "error": "device_id obrigatório"}), 400
+
+        if raw_site_id and raw_site_id != SITE_NAME:
+            update_site_name(raw_site_id)
 
         # Buscar dados do scan em cache de dispositivos LAN
         lan_devices = scan_devices()
@@ -3509,6 +3608,23 @@ def api_register_single_device():
         local_key = fetch_local_key_from_tuya_api(device_id)
         if not local_key:
             log(f"[REGISTER] Não foi possível obter local_key para {device_id}")
+
+        if local_only:
+            save_device_to_cache(
+                tuya_device_id=device_id,
+                local_key=local_key or "",
+                lan_ip=lan_ip,
+                version=float(version) if version else None
+            )
+            log(f"[REGISTER] Device {device_id} salvo localmente; unidade ainda nao vinculada")
+            return jsonify({
+                "ok": True,
+                "action": "salvo localmente",
+                "device_id": device_id,
+                "site_id": "",
+                "local_only": True,
+                "has_local_key": bool(local_key),
+            }), 200
 
         # Criar ou atualizar no banco
         db_devices = get_devices_from_db([device_id])
@@ -3788,11 +3904,13 @@ def api_system_health():
 
 @app.route("/api/system/restart-service", methods=["POST"])
 def api_system_restart_service():
+    insert_system_event("restart_requested", "Reinicio local do servico solicitado pelo painel.")
     subprocess.Popen(["sudo", "systemctl", "restart", "mrit-server"])
     return jsonify({"ok": True, "message": "Reiniciando serviço..."}), 200
 
 @app.route("/api/system/reboot", methods=["POST"])
 def api_system_reboot():
+    insert_system_event("reboot_requested", "Reinicio local do Raspberry solicitado pelo painel.")
     subprocess.Popen(["sudo", "reboot"])
     return jsonify({"ok": True, "message": "Reiniciando Pi..."}), 200
 
@@ -3855,6 +3973,7 @@ def api_system_update():
 def start_server(host="0.0.0.0", port=8000):
     """Inicia o servidor Flask"""
     log(f"[START] Servidor Tuya local rodando em http://{host}:{port} (SITE={SITE_NAME})")
+    threading.Thread(target=announce_server_online, args=("boot",), daemon=True).start()
     # Faz o scan inicial
     scan_and_print_devices()
     # Iniciar refresh periódico

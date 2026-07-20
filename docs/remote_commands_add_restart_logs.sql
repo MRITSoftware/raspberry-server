@@ -6,4 +6,4 @@ alter table public.remote_commands
 
 alter table public.remote_commands
   add constraint remote_commands_action_check
-  check (action in ('on', 'off', 'test', 'restart', 'logs', 'update'));
+  check (action in ('on', 'off', 'test', 'restart', 'reboot', 'heartbeat', 'logs', 'update'));

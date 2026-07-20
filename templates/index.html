@@ -22,6 +22,12 @@
 
         /* ── Layout ── */
         main { flex: 1; max-width: 880px; margin: 0 auto; width: 100%; padding: 20px 16px 40px; }
+        .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; background: #e2e8f0; border-radius: 12px; padding: 4px; margin-bottom: 14px; position: sticky; top: 72px; z-index: 40; }
+        .tab-btn { border: none; border-radius: 9px; background: transparent; color: #64748b; cursor: pointer; font-size: 12px; font-weight: 700; padding: 10px 8px; }
+        .tab-btn.active { background: white; color: #0d1f3d; box-shadow: 0 1px 2px rgba(15,23,42,0.12); }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        @media(max-width:520px) { .tabs { grid-template-columns: repeat(2, 1fr); position: static; } }
 
         /* ── Banner ── */
         .banner { background: #fffbeb; border: 1px solid #fbbf24; border-radius: 14px; padding: 16px 20px; margin-bottom: 16px; display: none; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -130,6 +136,8 @@
         .modal .warn-box { background: #fef3c7; color: #92400e; padding: 10px 13px; border-radius: 9px; font-size: 12px; line-height: 1.6; margin-bottom: 16px; }
         .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
         .modal-actions .btn { flex: 1; justify-content: center; }
+        .muted-link { background:none; border:none; color:#64748b; cursor:pointer; font-size:12px; padding:8px 4px; text-decoration:underline; }
+        .muted-link:hover { color:#2d6dc8; }
 
         /* ── Footer ── */
         footer { background: #0d1f3d; color: #334155; text-align: center; padding: 16px; font-size: 12px; margin-top: auto; }
@@ -152,6 +160,14 @@
 
 <main>
 
+    <div class="banner" id="setup-reminder">
+        <div class="banner-text">
+            <strong>Unidade ainda nao vinculada</strong>
+            <span>O painel local funciona agora. Cadastre o e-mail quando quiser habilitar comandos remotos, historico e monitoramento.</span>
+        </div>
+        <button class="btn btn-primary" onclick="setupOpen(true)">Vincular Unidade</button>
+    </div>
+
     <!-- Banner: sem plaquinha -->
     <div class="banner" id="no-device-banner">
         <div class="banner-text">
@@ -160,6 +176,15 @@
         </div>
         <button class="btn btn-danger" onclick="scrollToScan()">Buscar Agora</button>
     </div>
+
+    <nav class="tabs" aria-label="Seções do painel">
+        <button class="tab-btn active" id="tab-btn-overview" onclick="showTab('overview')">Resumo</button>
+        <button class="tab-btn" id="tab-btn-devices" onclick="showTab('devices')">Plaquinha</button>
+        <button class="tab-btn" id="tab-btn-network" onclick="showTab('network')">Rede</button>
+        <button class="tab-btn" id="tab-btn-system" onclick="showTab('system')">Sistema</button>
+    </nav>
+
+    <section class="tab-panel active" id="tab-overview">
 
     <!-- Status -->
     <div class="card">
@@ -171,6 +196,9 @@
             <div class="status-item"><div class="status-label">Plaquinha</div><div class="status-value" id="st-devices"><span class="spinner"></span></div></div>
         </div>
     </div>
+
+    </section>
+    <section class="tab-panel" id="tab-devices">
 
     <!-- Dispositivos Cadastrados -->
     <div class="card">
@@ -187,6 +215,9 @@
         <div id="scan-list"><div class="empty">Clique em "Escanear Rede" para buscar placas Tuya.</div></div>
         <div id="register-msg"></div>
     </div>
+
+    </section>
+    <section class="tab-panel" id="tab-network">
 
     <!-- Wi-Fi -->
     <div class="card">
@@ -247,6 +278,9 @@
         <div id="hotspot-msg"></div>
     </div>
 
+    </section>
+    <section class="tab-panel" id="tab-system">
+
     <!-- Sistema -->
     <div class="card">
         <div class="card-header"><span class="card-title">Sistema</span></div>
@@ -277,6 +311,8 @@
         <div class="logs-box" id="logs-box">Clique em "Atualizar" para ver os logs.</div>
     </div>
 
+    </section>
+
 </main>
 
 <footer>© GelaFit — <span>Sistema local</span></footer>
@@ -288,7 +324,7 @@
             <h3 style="margin:0;">Configurar Unidade</h3>
             <button id="btn-setup-close" onclick="setupClose()" style="display:none;background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;line-height:1;padding:0 2px;" title="Fechar">✕</button>
         </div>
-        <p class="sub" style="margin-bottom:16px;">Informe o e-mail desta unidade GelaFit.</p>
+        <p class="sub" style="margin-bottom:16px;">Vincule esta unidade ao banco para comandos remotos e monitoramento.</p>
         <div id="setup-step-1">
             <div class="field">
                 <label>E-mail da Unidade</label>
@@ -297,6 +333,9 @@
             <div id="setup-msg"></div>
             <div class="modal-actions" style="margin-top:16px;">
                 <button class="btn btn-primary" id="btn-setup-check" onclick="setupCheckEmail()" style="flex:1;justify-content:center;">Verificar</button>
+            </div>
+            <div style="text-align:center;margin-top:8px;">
+                <button class="muted-link" onclick="setupSkip()">Configurar depois</button>
             </div>
         </div>
         <div id="setup-step-2" style="display:none;">
@@ -349,6 +388,8 @@
 let selectedSsid = '';
 let currentSsid  = '';
 let registerDeviceId = '';
+let currentSiteNeedsSetup = false;
+let setupPromptDismissed = false;
 
 function togglePassword(inputId, btn) {
     const input = document.getElementById(inputId);
@@ -389,6 +430,9 @@ let _setupEmail = '';
 let _setupForce = false;
 
 function setupOpen(allowClose = false) {
+    if (!allowClose && setupPromptDismissed) return;
+    const banner = document.getElementById('setup-reminder');
+    if (banner) banner.style.display = 'flex';
     document.getElementById('btn-setup-close').style.display = allowClose ? 'block' : 'none';
     document.getElementById('setup-step-1').style.display = 'block';
     document.getElementById('setup-step-2').style.display = 'none';
@@ -400,6 +444,13 @@ function setupOpen(allowClose = false) {
 
 function setupClose() {
     document.getElementById('setup-modal').classList.remove('open');
+}
+
+function setupSkip() {
+    setupPromptDismissed = true;
+    document.getElementById('setup-modal').classList.remove('open');
+    const banner = document.getElementById('setup-reminder');
+    if (banner) banner.style.display = 'flex';
 }
 
 function setupBack() {
@@ -506,9 +557,13 @@ async function applyUpdate() {
 async function loadStatus() {
     try {
         const d = await get('/api/status');
-        document.getElementById('header-site').textContent = d.site || '—';
+        currentSiteNeedsSetup = !!d.needs_setup;
+        document.getElementById('header-site').textContent = d.needs_setup ? 'unidade nao vinculada' : (d.site || '-');
         if (d.needs_setup) {
+            document.getElementById('setup-reminder').style.display = 'flex';
             setupOpen();
+        } else {
+            document.getElementById('setup-reminder').style.display = 'none';
         }
         set('st-server',   dot('green') + 'Online');
         set('st-banco', d.db_configured ? dot('green') + 'OK' : dot('red') + 'Não configurado');
@@ -772,10 +827,41 @@ async function loadRegistered() {
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
                     <span class="badge badge-ok">Cadastrado</span>
+                    <button class="btn btn-primary" style="padding:5px 11px;font-size:12px;" onclick="testDevice('${dev.id}')">Testar</button>
                     <button class="btn btn-ghost" style="padding:5px 11px;font-size:12px;color:#dc2626;" onclick="removeDevice('${dev.id}')">Remover</button>
                 </div>
             </div>`).join('') + '</div>';
     } catch {}
+}
+
+async function testDevice(id) {
+    const row = document.getElementById(`dev-${id}`);
+    if (!row) return;
+    const oldMsg = row.querySelector('.device-test-msg');
+    if (oldMsg) oldMsg.remove();
+    const msg = document.createElement('div');
+    msg.className = 'device-test-msg msg msg-warn';
+    msg.style.marginTop = '10px';
+    msg.textContent = 'Testando comunicacao com a plaquinha...';
+    row.querySelector('.item-main').appendChild(msg);
+    try {
+        const r = await fetch('/tuya/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tuya_device_id: id })
+        });
+        const d = await r.json();
+        if (d.ok && d.checks?.device_ping_ok) {
+            msg.className = 'device-test-msg msg msg-ok';
+            msg.textContent = 'Plaquinha respondeu na rede local.';
+        } else {
+            msg.className = 'device-test-msg msg msg-err';
+            msg.textContent = d.ping_error || d.error || 'A plaquinha nao respondeu ao teste.';
+        }
+    } catch(e) {
+        msg.className = 'device-test-msg msg msg-err';
+        msg.textContent = 'Erro: ' + e.message;
+    }
 }
 
 async function removeDevice(id) {
@@ -812,6 +898,7 @@ async function scanDevices() {
 }
 
 function scrollToScan() {
+    showTab('devices');
     document.getElementById('btn-scan').scrollIntoView({ behavior: 'smooth' });
     document.getElementById('btn-scan').click();
 }
@@ -819,7 +906,8 @@ function scrollToScan() {
 function openRegisterModal(deviceId) {
     registerDeviceId = deviceId;
     document.getElementById('register-modal-device-id').textContent = deviceId;
-    document.getElementById('register-modal-site').value = document.getElementById('header-site').textContent.trim() || '';
+    document.getElementById('register-modal-site').value = currentSiteNeedsSetup ? '' : (document.getElementById('header-site').textContent.trim() || '');
+    document.getElementById('register-modal-site').placeholder = currentSiteNeedsSetup ? 'opcional agora' : 'email@unidade.com.br';
     document.getElementById('register-modal-msg').innerHTML = '';
     document.getElementById('btn-register-confirm').disabled = false;
     document.getElementById('btn-register-confirm').textContent = 'Cadastrar';
@@ -830,18 +918,28 @@ function openRegisterModal(deviceId) {
 }
 function closeRegisterModal() { document.getElementById('register-modal').classList.remove('open'); }
 
+function showTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`tab-${name}`)?.classList.add('active');
+    document.getElementById(`tab-btn-${name}`)?.classList.add('active');
+}
+
 async function confirmRegister() {
     const siteId = document.getElementById('register-modal-site').value.trim();
     const msg = document.getElementById('register-modal-msg');
     const btn = document.getElementById('btn-register-confirm');
-    if (!siteId) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">Email da unidade obrigatório.</div>'; return; }
+    const localOnly = currentSiteNeedsSetup && !siteId;
+    if (!siteId && !localOnly) { msg.innerHTML = '<div class="msg msg-err" style="margin-top:8px;">Email da unidade obrigatorio.</div>'; return; }
     btn.disabled = true; btn.textContent = 'Cadastrando...';
     msg.innerHTML = '';
     try {
-        const r = await fetch('/tuya/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device_id: registerDeviceId, site_id: siteId }) });
+        const r = await fetch('/tuya/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device_id: registerDeviceId, site_id: siteId, local_only: localOnly }) });
         const d = await r.json();
         if (d.ok) {
-            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:8px;">✓ Dispositivo ${d.action} para <b>${esc(d.site_id)}</b>.</div>`;
+            const target = d.local_only ? 'neste Raspberry' : `<b>${esc(d.site_id)}</b>`;
+            const keyNote = d.local_only && !d.has_local_key ? '<br><small>A local_key nao foi encontrada agora; vincule a unidade quando houver internet para completar o cadastro.</small>' : '';
+            msg.innerHTML = `<div class="msg msg-ok" style="margin-top:8px;">Dispositivo ${d.action} em ${target}.${keyNote}</div>`;
             btn.style.display = 'none';
             document.getElementById('btn-register-cancel').textContent = 'Fechar';
             loadStatus(); loadRegistered();

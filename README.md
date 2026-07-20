@@ -192,6 +192,14 @@ VALUES ('email@gelafit.com.br', 'off');
 INSERT INTO remote_commands (site_id, action)
 VALUES ('email@gelafit.com.br', 'restart');
 
+-- Reiniciar o Raspberry inteiro
+INSERT INTO remote_commands (site_id, action)
+VALUES ('email@gelafit.com.br', 'reboot');
+
+-- Forcar heartbeat/status agora
+INSERT INTO remote_commands (site_id, action)
+VALUES ('email@gelafit.com.br', 'heartbeat');
+
 -- Buscar logs remotamente
 INSERT INTO remote_commands (site_id, action)
 VALUES ('email@gelafit.com.br', 'logs');
@@ -206,7 +214,17 @@ FROM remote_commands
 WHERE site_id = 'email@gelafit.com.br'
 ORDER BY created_at DESC
 LIMIT 10;
+
+-- Ver eventos da unidade, incluindo server_online apos boot/restart/reboot
+SELECT id, site_id, event_type, message, data, versao, created_at
+FROM pi_system_events
+WHERE site_id = 'email@gelafit.com.br'
+ORDER BY created_at DESC
+LIMIT 20;
 ```
+
+> Para habilitar todos os comandos e eventos, execute no Supabase:
+> `docs/remote_commands_add_restart_logs.sql` e `docs/pi_system_events_setup.sql`.
 
 ---
 
