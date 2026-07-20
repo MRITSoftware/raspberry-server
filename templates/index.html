@@ -80,13 +80,24 @@
 
         /* ── Device / Network lists ── */
         .list { display: flex; flex-direction: column; gap: 8px; }
-        .list-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 11px; }
+        .list-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 11px; min-width: 0; }
         .list-item.clickable { cursor: pointer; transition: background .15s; }
         .list-item.clickable:hover { background: #f8fafc; }
         .list-item.active-net { border-color: #10b981; background: #f0fdf4; }
         .item-main { flex: 1; min-width: 0; }
-        .item-title { font-size: 13px; font-weight: 600; word-break: break-all; }
-        .item-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+        .item-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .item-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .device-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+        .device-actions .btn { padding: 5px 11px; font-size: 12px; }
+        .device-id { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+        @media(max-width:560px) {
+            .list-item { align-items: flex-start; flex-direction: column; gap: 10px; }
+            .list-item > .btn { width: 100%; justify-content: center; }
+            .item-main { width: 100%; }
+            .device-actions { width: 100%; justify-content: flex-start; }
+            .device-actions .badge { order: -1; }
+            .device-actions .btn { flex: 1 1 auto; justify-content: center; min-width: 78px; }
+        }
         .badge { padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
         .badge-new  { background: #fef3c7; color: #92400e; }
         .badge-ok   { background: #d1fae5; color: #065f46; }
@@ -185,10 +196,10 @@
         <button class="btn btn-primary" onclick="setupOpen(true)">Vincular Unidade</button>
     </div>
 
-    <!-- Banner: sem plaquinha -->
+    <!-- Banner: sem placa de pulso -->
     <div class="banner" id="no-device-banner">
         <div class="banner-text">
-            <strong>⚠️ Nenhuma plaquinha cadastrada para esta unidade</strong>
+            <strong>⚠️ Nenhuma placa de pulso cadastrada para esta unidade</strong>
             <span>Escaneie a rede para encontrar a placa Tuya e cadastre-a no banco.</span>
         </div>
         <button class="btn btn-danger" onclick="scrollToScan()">Buscar Agora</button>
@@ -196,7 +207,7 @@
 
     <nav class="tabs" aria-label="Seções do painel">
         <button class="tab-btn active" id="tab-btn-overview" onclick="showTab('overview')">Resumo</button>
-        <button class="tab-btn" id="tab-btn-devices" onclick="showTab('devices')">Plaquinha</button>
+        <button class="tab-btn" id="tab-btn-devices" onclick="showTab('devices')">Placa de Pulso</button>
         <button class="tab-btn" id="tab-btn-network" onclick="showTab('network')">Rede</button>
         <button class="tab-btn" id="tab-btn-system" onclick="showTab('system')">Sistema</button>
     </nav>
@@ -210,7 +221,7 @@
             <div class="status-item"><div class="status-label">Servidor</div><div class="status-value" id="st-server"><span class="spinner"></span></div></div>
             <div class="status-item"><div class="status-label">Database</div><div class="status-value" id="st-banco"><span class="spinner"></span></div></div>
             <div class="status-item"><div class="status-label">Realtime</div><div class="status-value" id="st-realtime"><span class="spinner"></span></div></div>
-            <div class="status-item"><div class="status-label">Plaquinha</div><div class="status-value" id="st-devices"><span class="spinner"></span></div></div>
+            <div class="status-item"><div class="status-label">Placa de Pulso</div><div class="status-value" id="st-devices"><span class="spinner"></span></div></div>
         </div>
     </div>
 
@@ -219,7 +230,7 @@
 
     <!-- Dispositivos Cadastrados -->
     <div class="card">
-        <div class="card-header"><span class="card-title">Plaquinha Cadastrada</span></div>
+        <div class="card-header"><span class="card-title">Placa de Pulso Cadastrada</span></div>
         <div id="registered-list"><div class="empty">Nenhum dispositivo no cache local ainda.</div></div>
     </div>
 
@@ -368,7 +379,7 @@
 <!-- Modal: cadastro de dispositivo -->
 <div class="modal-bg" id="register-modal">
     <div class="modal">
-        <h3>Cadastrar Plaquinha</h3>
+        <h3>Cadastrar Placa de Pulso</h3>
         <div class="sub" id="register-modal-device-id"></div>
         <div class="field">
             <label>Email da Unidade</label>
@@ -587,7 +598,7 @@ async function loadStatus() {
         set('st-realtime', d.realtime_connected   ? dot('green') + 'Conectado' : dot('yellow') + 'Conectando...');
         const inDb = d.devices_in_db;
         if (inDb === 0) {
-            set('st-devices', dot('red') + 'Sem plaquinha');
+            set('st-devices', dot('red') + 'Sem placa');
             document.getElementById('no-device-banner').style.display = 'flex';
         } else if (inDb > 0) {
             set('st-devices', dot('green') + inDb + ' no banco');
@@ -839,14 +850,14 @@ async function loadRegistered() {
         list.innerHTML = '<div class="list">' + d.devices.map(dev => `
             <div class="list-item" id="dev-${dev.id}">
                 <div class="item-main">
-                    <div class="item-title">${dev.id}</div>
+                    <div class="item-title device-id" title="${dev.id}">${dev.id}</div>
                     <div class="item-sub">IP: ${dev.lan_ip || '—'} · Versão: ${dev.version || '—'} · Key: ${dev.local_key_masked || '—'}</div>
                 </div>
-                <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+                <div class="device-actions">
                     <span class="badge badge-ok">Cadastrado</span>
-                    <button class="btn btn-success" style="padding:5px 11px;font-size:12px;" onclick="turnOnDevice('${dev.id}')">Ligar</button>
-                    <button class="btn btn-primary" style="padding:5px 11px;font-size:12px;" onclick="testDevice('${dev.id}')">Testar</button>
-                    <button class="btn btn-ghost" style="padding:5px 11px;font-size:12px;color:#dc2626;" onclick="removeDevice('${dev.id}')">Remover</button>
+                    <button class="btn btn-success" onclick="turnOnDevice('${dev.id}')">Ligar</button>
+                    <button class="btn btn-primary" onclick="testDevice('${dev.id}')">Testar</button>
+                    <button class="btn btn-ghost" style="color:#dc2626;" onclick="removeDevice('${dev.id}')">Remover</button>
                 </div>
             </div>`).join('') + '</div>';
     } catch {}
@@ -866,7 +877,7 @@ function showDeviceMessage(id, text, type = 'warn') {
 }
 
 async function turnOnDevice(id) {
-    const msg = showDeviceMessage(id, 'Enviando comando para ligar a plaquinha...', 'warn');
+    const msg = showDeviceMessage(id, 'Enviando comando para ligar a placa de pulso...', 'warn');
     if (!msg) return;
     try {
         const r = await fetch('/tuya/command', {
@@ -877,11 +888,11 @@ async function turnOnDevice(id) {
         const d = await r.json();
         if (d.ok) {
             msg.className = 'device-action-msg msg msg-ok';
-            msg.textContent = 'Comando enviado. Plaquinha ligada.';
+            msg.textContent = 'Comando enviado. Placa de pulso ligada.';
             setTimeout(() => testDevice(id), 1200);
         } else {
             msg.className = 'device-action-msg msg msg-err';
-            msg.textContent = d.error || 'Nao foi possivel ligar a plaquinha.';
+            msg.textContent = d.error || 'Nao foi possivel ligar a placa de pulso.';
         }
     } catch(e) {
         msg.className = 'device-action-msg msg msg-err';
@@ -897,7 +908,7 @@ async function testDevice(id) {
     const msg = document.createElement('div');
     msg.className = 'device-test-msg msg msg-warn';
     msg.style.marginTop = '10px';
-    msg.textContent = 'Testando comunicacao com a plaquinha...';
+    msg.textContent = 'Testando comunicacao com a placa de pulso...';
     row.querySelector('.item-main').appendChild(msg);
     try {
         const r = await fetch('/tuya/test', {
@@ -910,10 +921,10 @@ async function testDevice(id) {
             msg.className = 'device-test-msg msg msg-ok';
             const speed = d.internet_speed_mbps !== null && d.internet_speed_mbps !== undefined ? ` Velocidade: ${Math.round(d.internet_speed_mbps)} Mbps.` : '';
             const db = d.heartbeat_updated ? ' Banco atualizado.' : ' Placa OK, mas o banco nao foi atualizado.';
-            msg.textContent = 'Plaquinha respondeu na rede local.' + db + speed;
+            msg.textContent = 'Placa de pulso respondeu na rede local.' + db + speed;
         } else {
             msg.className = 'device-test-msg msg msg-err';
-            msg.textContent = d.ping_error || d.error || 'A plaquinha nao respondeu ao teste.';
+            msg.textContent = d.ping_error || d.error || 'A placa de pulso nao respondeu ao teste.';
         }
     } catch(e) {
         msg.className = 'device-test-msg msg msg-err';
@@ -944,7 +955,7 @@ async function scanDevices() {
             list.innerHTML = '<div class="list">' + devices.map(dev => `
                 <div class="list-item">
                     <div class="item-main">
-                        <div class="item-title">${dev.id}</div>
+                        <div class="item-title device-id" title="${dev.id}">${dev.id}</div>
                         <div class="item-sub">IP: ${dev.ip || '—'} · Versão: ${dev.version || '—'}</div>
                     </div>
                     <button class="btn btn-success" style="flex-shrink:0;padding:7px 14px;font-size:12px;" onclick="openRegisterModal('${dev.id}')">Cadastrar</button>
