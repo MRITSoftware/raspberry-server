@@ -225,6 +225,9 @@ LIMIT 20;
 
 > Para habilitar todos os comandos e eventos, execute no Supabase:
 > `docs/remote_commands_add_restart_logs.sql` e `docs/pi_system_events_setup.sql`.
+>
+> Para habilitar rastreabilidade de versão/boot, execute também:
+> `docs/version_traceability_setup.sql`.
 
 ---
 

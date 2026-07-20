@@ -91,6 +91,7 @@ REFRESH_LAST_STATUS: Dict[str, bool] = {}
 APP_VERSION = "1.0-PI-wifi-rescue"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVICE_STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
 
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 DEVICES_CACHE_PATH = os.path.join(BASE_DIR, "devices_cache.json")
@@ -98,6 +99,7 @@ PENDING_HEARTBEAT_LOGS_PATH = os.path.join(BASE_DIR, "pending_heartbeat_logs.jso
 REMOTE_COMMAND_TABLE = "remote_commands"
 REMOTE_COMMAND_TOPIC = "realtime:remote_commands"
 SYSTEM_EVENT_TABLE = "pi_system_events"
+TUYA_SERVER_EVENT_TABLE = "tuya_server_events"
 REMOTE_COMMAND_HEARTBEAT_SECONDS = 20
 REMOTE_COMMAND_RECONNECT_SECONDS = 10
 REMOTE_COMMAND_LISTENER_STARTED = False
@@ -105,6 +107,46 @@ REMOTE_COMMAND_LISTENER_LOCK = threading.Lock()
 REMOTE_COMMAND_WS_LOCK = threading.Lock()
 REMOTE_COMMAND_WS_APP = None
 REMOTE_COMMAND_REF_COUNTER = 0
+
+def get_git_value(args: List[str], default: str = "unknown") -> str:
+    try:
+        result = subprocess.run(
+            ["git"] + args,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=BASE_DIR
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return default
+
+APP_COMMIT = get_git_value(["rev-parse", "HEAD"])
+APP_COMMIT_SHORT = get_git_value(["rev-parse", "--short", "HEAD"])
+APP_BRANCH = get_git_value(["rev-parse", "--abbrev-ref", "HEAD"])
+
+def get_app_trace_fields(include_heartbeat: bool = False) -> Dict[str, Any]:
+    fields: Dict[str, Any] = {
+        "versao": APP_VERSION,
+        "app_commit": APP_COMMIT,
+        "app_commit_short": APP_COMMIT_SHORT,
+        "app_branch": APP_BRANCH,
+        "service_started_at": SERVICE_STARTED_AT,
+    }
+    if include_heartbeat:
+        fields["last_heartbeat_at"] = current_timestamp_iso()
+    return fields
+
+def get_app_trace_result() -> Dict[str, Any]:
+    return {
+        "app_version": APP_VERSION,
+        "commit_sha": APP_COMMIT,
+        "commit_short": APP_COMMIT_SHORT,
+        "branch": APP_BRANCH,
+        "service_started_at": SERVICE_STARTED_AT,
+    }
 
 def load_config_from_env() -> Dict[str, Any]:
     """Carrega configurações de variáveis de ambiente."""
@@ -554,7 +596,7 @@ def update_device_by_id_in_db(
             update_data["lan_ip"] = lan_ip
         if protocol_version is not None:
             update_data["protocol_version"] = protocol_version
-        update_data["versao"] = APP_VERSION
+        update_data.update(get_app_trace_fields())
         
         if not update_data:
             log(f"[DB] Nenhum dado para atualizar por id={device_row_id}")
@@ -747,8 +789,8 @@ def create_device_in_db(
         device_data = {
             'tuya_device_id': tuya_device_id,
             'site_id': site_id,
-            'versao': APP_VERSION
         }
+        device_data.update(get_app_trace_fields())
         
         if name is not None:
             device_data['name'] = name
@@ -1020,7 +1062,7 @@ def update_device_heartbeat(
         url = f"{base_url}/tuya_devices?tuya_device_id=eq.{tuya_device_id}"
         
         update_data: Dict[str, Any] = {}
-        update_data["versao"] = APP_VERSION
+        update_data.update(get_app_trace_fields(include_heartbeat=True))
 
         # Wi-Fi SSID atual
         try:
@@ -1197,7 +1239,7 @@ def update_device_in_db(
         
         if protocol_version is not None:
             update_data['protocol_version'] = protocol_version
-        update_data['versao'] = APP_VERSION
+        update_data.update(get_app_trace_fields())
         
         # updated_at será atualizado automaticamente pelo banco (default now())
         
@@ -2692,8 +2734,8 @@ def mark_device_online_in_db(tuya_device_id: str, internet_speed_mbps: Optional[
 
     update_data: Dict[str, Any] = {
         "servidor_online": current_timestamp_iso(),
-        "versao": APP_VERSION,
     }
+    update_data.update(get_app_trace_fields(include_heartbeat=True))
 
     try:
         r_nm = subprocess.run(
@@ -2756,6 +2798,35 @@ def insert_system_event(event_type: str, message: str, data: Optional[Dict[str, 
         log(f"[EVENT] Erro ao registrar evento {event_type}: {e}")
         return False
 
+def insert_tuya_server_event(event_type: str, message: str, data: Optional[Dict[str, Any]] = None) -> bool:
+    """Registra eventos de ciclo de vida do agente em tuya_server_events."""
+    if not REQUESTS_AVAILABLE or not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
+        return False
+
+    try:
+        event_data = data or {}
+        payload = {
+            "site_id": SITE_NAME,
+            "event_type": event_type,
+            "app_version": APP_VERSION,
+            "commit_sha": event_data.get("new_commit") or event_data.get("commit_sha") or APP_COMMIT,
+            "message": message,
+            "data": event_data,
+            "created_at": current_timestamp_iso(),
+        }
+        response = requests.post(
+            f"{get_supabase_url()}/{TUYA_SERVER_EVENT_TABLE}",
+            json=payload,
+            headers=get_supabase_headers(),
+            timeout=15,
+        )
+        response.raise_for_status()
+        log(f"[SERVER_EVENT] {event_type}: {message}")
+        return True
+    except Exception as e:
+        log(f"[SERVER_EVENT] Erro ao registrar evento {event_type}: {e}")
+        return False
+
 def announce_server_online(reason: str = "boot") -> None:
     """Avise a central que o servidor subiu e ja esta processando comandos."""
     try:
@@ -2771,6 +2842,17 @@ def announce_server_online(reason: str = "boot") -> None:
             "hostname": socket.gethostname(),
             "uptime_seconds": metrics.get("uptime_seconds"),
             "wifi_ssid": metrics.get("wifi_ssid"),
+        },
+    )
+    insert_tuya_server_event(
+        "startup",
+        "Servidor online e pronto para receber comandos remotos.",
+        {
+            "reason": reason,
+            "hostname": socket.gethostname(),
+            "uptime_seconds": metrics.get("uptime_seconds"),
+            "wifi_ssid": metrics.get("wifi_ssid"),
+            **get_app_trace_result(),
         },
     )
 
@@ -3064,16 +3146,31 @@ def execute_remote_command_action(record: Dict[str, Any]) -> Dict[str, Any]:
         return run_remote_system_test(record)
 
     if action == "restart":
+        result_payload = {
+            "ok": True,
+            "old_commit": APP_COMMIT,
+            "new_commit": APP_COMMIT,
+            "branch": APP_BRANCH,
+            "app_version": APP_VERSION,
+            "service_started_at": SERVICE_STARTED_AT,
+            "message": "Reinicio solicitado. Reiniciando em 4s...",
+        }
         insert_system_event(
             "restart_requested",
             "Reinicio remoto do servico solicitado.",
             {"command_id": record.get("id"), "action": action},
+        )
+        insert_tuya_server_event(
+            "restart",
+            "Reinicio remoto do servico solicitado.",
+            {"command_id": record.get("id"), **result_payload},
         )
         log("[REMOTE] Comando restart recebido — reiniciando serviço em 4s")
         def _do_restart():
             time.sleep(4)
             subprocess.Popen(["sudo", "systemctl", "restart", "mrit-server"])
         threading.Thread(target=_do_restart, daemon=True).start()
+        return result_payload
         return {"message": "Serviço reiniciando em 4 segundos..."}
 
     if action == "reboot":
@@ -3103,10 +3200,23 @@ def execute_remote_command_action(record: Dict[str, Any]) -> Dict[str, Any]:
         return {"logs": r.stdout[-4000:]}
 
     if action == "update":
+        old_commit = get_git_value(["rev-parse", "HEAD"])
+        branch = get_git_value(["rev-parse", "--abbrev-ref", "HEAD"])
         log("[REMOTE] Comando update recebido — executando git pull...")
         result = subprocess.run(["git", "pull"], capture_output=True, text=True, timeout=60, cwd=BASE_DIR)
+        output = ((result.stdout or "") + ("\n" + result.stderr if result.stderr else "")).strip()
+        new_commit = get_git_value(["rev-parse", "HEAD"])
         if result.returncode == 0:
             log(f"[REMOTE] git pull OK: {result.stdout.strip()}")
+            result_payload = {
+                "ok": True,
+                "old_commit": old_commit,
+                "new_commit": new_commit,
+                "branch": branch,
+                "app_version": APP_VERSION,
+                "output": output[-4000:],
+                "message": "Atualização aplicada. Reiniciando em 4s...",
+            }
             insert_system_event(
                 "update_applied",
                 "Atualizacao remota aplicada. Servico sera reiniciado.",
@@ -3115,14 +3225,32 @@ def execute_remote_command_action(record: Dict[str, Any]) -> Dict[str, Any]:
                     "output": result.stdout.strip()[-1000:],
                 },
             )
+            insert_tuya_server_event(
+                "update",
+                "Atualizacao remota aplicada. Servico sera reiniciado.",
+                {"command_id": record.get("id"), **result_payload},
+            )
             def _restart_after_update():
                 time.sleep(4)
                 subprocess.Popen(["sudo", "systemctl", "restart", "mrit-server"])
             threading.Thread(target=_restart_after_update, daemon=True).start()
+            return result_payload
             return {"message": "Atualização aplicada. Reiniciando em 4s...", "output": result.stdout.strip()[-2000:]}
         else:
             err = result.stderr.strip() or result.stdout.strip()
             log(f"[REMOTE] git pull falhou: {err}")
+            insert_tuya_server_event(
+                "error",
+                "Falha ao aplicar atualizacao remota.",
+                {
+                    "command_id": record.get("id"),
+                    "old_commit": old_commit,
+                    "new_commit": new_commit,
+                    "branch": branch,
+                    "app_version": APP_VERSION,
+                    "output": (output or err)[-4000:],
+                },
+            )
             raise RuntimeError(f"git pull falhou: {err}")
 
     raise ValueError(f"Ação remota inválida: {action}")
@@ -3332,6 +3460,16 @@ def process_remote_command_record(record: Dict[str, Any]) -> None:
     except Exception as e:
         err = str(e)
         log(f"[REMOTE] Falha ao executar comando remoto {command_id}: {err}")
+        insert_tuya_server_event(
+            "error",
+            "Falha ao executar comando remoto.",
+            {
+                "command_id": command_id,
+                "action": action,
+                "error": err,
+                **get_app_trace_result(),
+            },
+        )
         if action == "test":
             save_single_test_command_result(
                 command_id=command_id,
