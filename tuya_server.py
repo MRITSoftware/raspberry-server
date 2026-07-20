@@ -148,6 +148,89 @@ def get_app_trace_result() -> Dict[str, Any]:
         "service_started_at": SERVICE_STARTED_AT,
     }
 
+def get_active_release(channel: str = "stable") -> Optional[Dict[str, Any]]:
+    """Busca a versao ativa publicada em tuya_server_releases."""
+    if not REQUESTS_AVAILABLE or not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
+        return None
+
+    try:
+        url = (
+            f"{get_supabase_url()}/tuya_server_releases"
+            f"?channel=eq.{channel}"
+            f"&active=eq.true"
+            f"&select=channel,app_version,commit_sha,commit_short,branch,notes,created_at"
+            f"&order=created_at.desc"
+            f"&limit=1"
+        )
+        response = requests.get(url, headers=get_supabase_headers(), timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        if data:
+            return data[0]
+    except Exception as e:
+        log(f"[UPDATE] Erro ao buscar release ativo ({channel}): {e}")
+    return None
+
+def build_check_update_result(channel: str = "stable") -> Dict[str, Any]:
+    """Compara o commit local com o release ativo publicado no Supabase."""
+    current_commit = get_git_value(["rev-parse", "HEAD"], APP_COMMIT)
+    current_short = get_git_value(["rev-parse", "--short", "HEAD"], APP_COMMIT_SHORT)
+    current_branch = get_git_value(["rev-parse", "--abbrev-ref", "HEAD"], APP_BRANCH)
+    release = get_active_release(channel)
+
+    if release:
+        latest_commit = release.get("commit_sha") or ""
+        latest_short = release.get("commit_short") or (latest_commit[:7] if latest_commit else "")
+        return {
+            "ok": True,
+            "source": "tuya_server_releases",
+            "channel": channel,
+            "has_update": bool(latest_commit and latest_commit != current_commit),
+            "current_commit": current_commit,
+            "current_commit_short": current_short,
+            "current_branch": current_branch,
+            "latest_commit": latest_commit,
+            "latest_commit_short": latest_short,
+            "latest_branch": release.get("branch"),
+            "latest_app_version": release.get("app_version"),
+            "notes": release.get("notes"),
+            "release_created_at": release.get("created_at"),
+            "app_version": APP_VERSION,
+            "service_started_at": SERVICE_STARTED_AT,
+        }
+
+    subprocess.run(["git", "fetch", "--quiet"], capture_output=True, timeout=20, cwd=BASE_DIR)
+    remote_commit = get_git_value(["rev-parse", "origin/main"], "")
+    commits_behind = 0
+    if current_commit and remote_commit and current_commit != remote_commit:
+        count_r = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD..origin/main"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=BASE_DIR
+        )
+        try:
+            commits_behind = int(count_r.stdout.strip())
+        except ValueError:
+            commits_behind = 0
+
+    return {
+        "ok": True,
+        "source": "git_origin",
+        "channel": channel,
+        "has_update": bool(current_commit and remote_commit and current_commit != remote_commit),
+        "commits_behind": commits_behind,
+        "current_commit": current_commit,
+        "current_commit_short": current_short,
+        "current_branch": current_branch,
+        "latest_commit": remote_commit,
+        "latest_commit_short": remote_commit[:7] if remote_commit else "",
+        "latest_branch": "origin/main",
+        "app_version": APP_VERSION,
+        "service_started_at": SERVICE_STARTED_AT,
+    }
+
 def load_config_from_env() -> Dict[str, Any]:
     """Carrega configurações de variáveis de ambiente."""
     config = {}
@@ -3199,6 +3282,16 @@ def execute_remote_command_action(record: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {"logs": r.stdout[-4000:]}
 
+    if action == "check_update":
+        channel = record.get("channel") or "stable"
+        result_payload = build_check_update_result(channel=channel)
+        insert_tuya_server_event(
+            "check_update",
+            "Verificacao remota de atualizacao executada.",
+            {"command_id": record.get("id"), **result_payload},
+        )
+        return result_payload
+
     if action == "update":
         old_commit = get_git_value(["rev-parse", "HEAD"])
         branch = get_git_value(["rev-parse", "--abbrev-ref", "HEAD"])
@@ -4134,25 +4227,12 @@ def api_system_logs():
 @app.route("/api/system/check-update", methods=["GET"])
 def api_system_check_update():
     try:
-        subprocess.run(["git", "fetch", "--quiet"], capture_output=True, timeout=20, cwd=BASE_DIR)
-        local_r = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5, cwd=BASE_DIR)
-        remote_r = subprocess.run(["git", "rev-parse", "origin/main"], capture_output=True, text=True, timeout=5, cwd=BASE_DIR)
-        local = local_r.stdout.strip()
-        remote = remote_r.stdout.strip()
-        has_update = bool(local and remote and local != remote)
-        commits_behind = 0
-        if has_update:
-            count_r = subprocess.run(["git", "rev-list", "--count", "HEAD..origin/main"], capture_output=True, text=True, timeout=5, cwd=BASE_DIR)
-            try:
-                commits_behind = int(count_r.stdout.strip())
-            except ValueError:
-                commits_behind = 0
+        result = build_check_update_result(channel=request.args.get("channel", "stable"))
         return jsonify({
-            "ok": True,
-            "has_update": has_update,
-            "commits_behind": commits_behind,
-            "current": local[:7] if local else "?",
-            "latest": remote[:7] if remote else "?",
+            **result,
+            "current": result.get("current_commit_short") or "?",
+            "latest": result.get("latest_commit_short") or "?",
+            "commits_behind": result.get("commits_behind", 0),
         }), 200
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
