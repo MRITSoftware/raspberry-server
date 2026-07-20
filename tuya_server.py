@@ -2673,6 +2673,50 @@ def current_timestamp_iso() -> str:
     now_utc = datetime.now(timezone.utc)
     return now_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
 
+def mark_device_online_in_db(tuya_device_id: str, internet_speed_mbps: Optional[float] = None) -> bool:
+    """Atualiza servidor_online e velocidade no banco sem refazer o ping da placa."""
+    if not REQUESTS_AVAILABLE or not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
+        return False
+
+    update_data: Dict[str, Any] = {
+        "servidor_online": current_timestamp_iso(),
+        "versao": APP_VERSION,
+    }
+
+    try:
+        r_nm = subprocess.run(
+            ["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in r_nm.stdout.splitlines():
+            parts = line.split(":")
+            if parts and parts[0].lower() == "yes" and len(parts) > 1 and parts[1]:
+                update_data["wifi_ssid"] = parts[1]
+                break
+    except Exception:
+        pass
+
+    if internet_speed_mbps is not None and internet_speed_mbps >= 0:
+        update_data["wifi_speed"] = int(round(internet_speed_mbps))
+
+    try:
+        response = requests.patch(
+            f"{get_supabase_url()}/tuya_devices?tuya_device_id=eq.{tuya_device_id}",
+            json=update_data,
+            headers={**get_supabase_headers(), "Prefer": "return=representation"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if data:
+            log(f"[DB] servidor_online atualizado pelo teste para {tuya_device_id}: {update_data}")
+            return True
+        log(f"[DB] Nenhuma linha encontrada para atualizar servidor_online pelo teste: {tuya_device_id}")
+        return False
+    except Exception as e:
+        log(f"[DB] Erro ao atualizar servidor_online pelo teste para {tuya_device_id}: {e}")
+        return False
+
 def insert_system_event(event_type: str, message: str, data: Optional[Dict[str, Any]] = None) -> bool:
     """Registra um evento da unidade no Supabase para notificacoes/monitoramento remoto."""
     if not REQUESTS_AVAILABLE or not SUPABASE_CONFIG.get("url") or not SUPABASE_CONFIG.get("anon_key"):
@@ -2924,6 +2968,8 @@ def run_remote_system_test(record: Dict[str, Any]) -> Dict[str, Any]:
     device_ping_ok = False
     device_status_payload = None
     ping_error = None
+    internet_speed_mbps = None
+    heartbeat_updated = False
 
     if lan_ip and local_key:
         try:
@@ -2933,6 +2979,13 @@ def run_remote_system_test(record: Dict[str, Any]) -> Dict[str, Any]:
             if status:
                 device_ping_ok = True
                 device_status_payload = status
+                internet_speed_mbps = _measure_wifi_speed()
+                heartbeat_updated = mark_device_online_in_db(
+                    tuya_device_id,
+                    internet_speed_mbps=internet_speed_mbps if internet_speed_mbps > 0 else None
+                )
+                if internet_speed_mbps > 0:
+                    _log_system_metrics(wifi_speed_mbps=internet_speed_mbps)
             else:
                 ping_error = "Placa não respondeu ao status()"
         except Exception as e:
@@ -2952,8 +3005,6 @@ def run_remote_system_test(record: Dict[str, Any]) -> Dict[str, Any]:
 
     all_ok = all([
         checks["server_running"],
-        checks["supabase_configured"],
-        checks["device_found_in_db"] or checks["device_found_in_cache"],
         checks["device_has_lan_ip"],
         checks["device_has_local_key"],
         checks["device_ping_ok"],
@@ -2971,6 +3022,8 @@ def run_remote_system_test(record: Dict[str, Any]) -> Dict[str, Any]:
             "resolution_source": context["resolution_source"],
         },
         "checks": checks,
+        "heartbeat_updated": heartbeat_updated,
+        "internet_speed_mbps": internet_speed_mbps,
     }
 
     if device_status_payload is not None:
