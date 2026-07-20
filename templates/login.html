@@ -22,6 +22,9 @@
         button { width: 100%; padding: 13px; background: #2d6dc8; color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; transition: opacity .15s; }
         button:hover { opacity: 0.88; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .password-wrap { position: relative; }
+        .password-wrap input { padding-right: 52px; }
+        .toggle-pass { position: absolute; right: 6px; top: 6px; width: 40px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #cbd5e1; font-size: 16px; }
         .err { background: #450a0a; color: #fca5a5; padding: 11px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: none; }
         footer { margin-top: 32px; font-size: 12px; color: #334155; text-align: center; }
     </style>
@@ -33,19 +36,31 @@
                 <div class="logo-icon"><img src="/static/logo.png" alt="GelaFit" style="width:38px;height:38px;object-fit:contain;"></div>
                 <div class="logo-text">
                     <div class="title">GelaFit</div>
-                    <div class="sub">Painel de Controle</div>
+                    <div class="sub">Servidor</div>
                 </div>
             </div>
         </div>
         <h2>Acesso Restrito</h2>
         <div class="err" id="err-msg"></div>
         <label>Senha</label>
-        <input type="password" id="pwd" placeholder="Digite a senha do painel" autofocus onkeydown="if(event.key==='Enter')doLogin()" />
+        <div class="password-wrap">
+            <input type="password" id="pwd" placeholder="Digite a senha do painel" autofocus onkeydown="if(event.key==='Enter')doLogin()" />
+            <button class="toggle-pass" type="button" onclick="togglePassword()" aria-label="Mostrar senha">👁</button>
+        </div>
         <button id="btn-login" onclick="doLogin()">Entrar</button>
     </div>
-    <footer>© GelaFit — Sistema local</footer>
+    <footer>© GelaFit — Servidor</footer>
 
     <script>
+    function togglePassword() {
+        const input = document.getElementById('pwd');
+        const btn = document.querySelector('.toggle-pass');
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.textContent = show ? '🙈' : '👁';
+        btn.setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha');
+    }
+
     async function doLogin() {
         const pwd = document.getElementById('pwd').value;
         const btn = document.getElementById('btn-login');
