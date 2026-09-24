@@ -10,6 +10,7 @@ import subprocess
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse
+from email.utils import parsedate_to_datetime
 
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from functools import wraps
@@ -84,11 +85,13 @@ DEVICE_REFRESH_INTERVAL_SECONDS = 5 * 60  # 5 minutos
 DEVICE_REFRESH_RETRY_ON_FAILURE_SECONDS = 60  # 1 minuto quando houver falha
 COMMAND_MAX_RETRIES = 3
 COMMAND_RETRY_DELAY_SECONDS = 1
-COMMAND_PREFLIGHT_TIMEOUT_SECONDS = 8
-COMMAND_ACTION_TIMEOUT_SECONDS = 20
+COMMAND_PREFLIGHT_TIMEOUT_SECONDS = 5
+COMMAND_ACTION_TIMEOUT_SECONDS = 8
+COMMAND_TOTAL_DEADLINE_SECONDS = 30  # tempo máximo de um comando on/off, incluindo redescoberta
+DISCOVER_SCAN_SECONDS = 12  # varredura UDP para redescobrir IP (para antes se achar a placa)
 REFRESH_FAIL_COUNTS: Dict[str, int] = {}
 REFRESH_LAST_STATUS: Dict[str, bool] = {}
-APP_VERSION = "1.0-PI-wifi-rescue"
+APP_VERSION = "1.1-PI-command-reliability"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVICE_STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
@@ -102,6 +105,24 @@ SYSTEM_EVENT_TABLE = "pi_system_events"
 TUYA_SERVER_EVENT_TABLE = "tuya_server_events"
 REMOTE_COMMAND_HEARTBEAT_SECONDS = 20
 REMOTE_COMMAND_RECONNECT_SECONDS = 10
+# Sem nenhuma mensagem do Realtime por esse tempo (heartbeat responde a cada 20s), a conexão é considerada morta
+REMOTE_COMMAND_STALE_SECONDS = 60
+REMOTE_COMMAND_WS_PING_INTERVAL = 30
+REMOTE_COMMAND_WS_PING_TIMEOUT = 10
+# Busca periódica de comandos pendentes, para os que o Realtime não entregou
+REMOTE_COMMAND_POLL_HEALTHY_SECONDS = 20
+REMOTE_COMMAND_POLL_UNHEALTHY_SECONDS = 5
+# Comandos mais antigos que isso são marcados como expirados em vez de executados
+# (evita abrir a porta horas depois, sem ninguém na frente)
+REMOTE_COMMAND_MAX_AGE_SECONDS = {"on": 60, "off": 60, "test": 120}
+REMOTE_COMMAND_DEFAULT_MAX_AGE_SECONDS = 15 * 60
+REMOTE_LISTENER_STATE: Dict[str, Any] = {
+    "connected_at": None,
+    "joined": False,
+    "last_message_at": 0.0,
+    "last_poll_ok_at": 0.0,
+    "reconnects": 0,
+}
 REMOTE_COMMAND_LISTENER_STARTED = False
 REMOTE_COMMAND_LISTENER_LOCK = threading.Lock()
 REMOTE_COMMAND_WS_LOCK = threading.Lock()
@@ -940,8 +961,20 @@ def create_device_in_db(
         traceback.print_exc()
         return False
 
+# Erros do tinytuya em que a mensagem não chegou à placa (conexão, timeout, chave/versão errada).
+# Os demais (ex: 904 payload inesperado) significam que a placa respondeu.
+TUYA_UNREACHABLE_ERROR_CODES = {"901", "902", "905", "914"}
+
+def tuya_unreachable_error(resp: Any) -> Optional[str]:
+    """Se a resposta do tinytuya indica que a placa não foi alcançada, retorna a descrição do erro."""
+    if isinstance(resp, dict) and "Error" in resp:
+        code = str(resp.get("Err", ""))
+        if code in TUYA_UNREACHABLE_ERROR_CODES or not code:
+            return f"{resp.get('Error')} (Err {code or '?'})"
+    return None
+
 def tuya_status_with_timeout(device: Any, timeout_seconds: int = 20) -> Optional[Dict]:
-    """Executa status() com timeout para evitar travamentos."""
+    """Executa status() com timeout para evitar travamentos. Retorna None se a placa não respondeu."""
     result = [None]
     exception = [None]
     
@@ -962,7 +995,12 @@ def tuya_status_with_timeout(device: Any, timeout_seconds: int = 20) -> Optional
     if exception[0]:
         log(f"[TUYA] Exceção durante status(): {exception[0]}")
         return None
-    
+
+    unreachable = tuya_unreachable_error(result[0])
+    if unreachable:
+        log(f"[TUYA] Placa não respondeu ao status(): {unreachable}")
+        return None
+
     return result[0]
 
 def normalize_tuya_power_value(value: Any) -> Optional[bool]:
@@ -1001,7 +1039,10 @@ def extract_tuya_power_state(status_payload: Any) -> Optional[bool]:
     return None
 
 def tuya_command_with_timeout(device: Any, action: str, timeout_seconds: int = 20) -> Optional[Dict]:
-    """Executa turn_on() ou turn_off() com timeout para evitar travamentos."""
+    """
+    Executa turn_on() ou turn_off() com timeout para evitar travamentos.
+    Levanta TimeoutError no timeout; None significa que a placa aceitou sem devolver payload.
+    """
     result = [None]
     exception = [None]
     
@@ -1022,8 +1063,8 @@ def tuya_command_with_timeout(device: Any, action: str, timeout_seconds: int = 2
     
     if thread.is_alive():
         log(f"[TUYA] Timeout após {timeout_seconds} segundos em {action}()")
-        return None
-    
+        raise TimeoutError(f"Timeout após {timeout_seconds}s em {action}()")
+
     if exception[0]:
         log(f"[TUYA] Exceção durante {action}(): {exception[0]}")
         raise exception[0]
@@ -1530,6 +1571,15 @@ log(f"[CACHE] Cache inicializado com {len(DEVICES_CACHE)} dispositivo(s)")
 
 DEVICE_CACHE: Dict[str, str] = {}
 DEVICE_CACHE_LOCK = threading.Lock()
+DEVICE_COMMAND_LOCKS: Dict[str, threading.Lock] = {}
+
+def get_device_command_lock(tuya_device_id: str) -> threading.Lock:
+    """Lock por placa para não mandar dois comandos simultâneos na mesma conexão Tuya."""
+    with DEVICE_CACHE_LOCK:
+        lock = DEVICE_COMMAND_LOCKS.get(tuya_device_id)
+        if lock is None:
+            lock = DEVICE_COMMAND_LOCKS[tuya_device_id] = threading.Lock()
+        return lock
 
 def scan_and_print_devices() -> None:
     """Faz um scan na rede e imprime todos os dispositivos Tuya encontrados."""
@@ -1626,23 +1676,65 @@ def scan_with_timeout(timeout_seconds: int = 30) -> Optional[Dict]:
     
     return result[0]
 
-def discover_tuya_ip(tuya_device_id: str) -> Optional[str]:
+def scan_for_device_with_timeout(tuya_device_id: str, scan_seconds: int = DISCOVER_SCAN_SECONDS) -> Optional[Dict]:
     """
-    Tenta descobrir o IP LAN de um dispositivo Tuya pelo gwId (device_id),
-    usando tinytuya.deviceScan() e guarda em cache.
+    Varre a rede procurando um device específico. Para assim que acha a placa
+    e não abre conexão com cada device encontrado (poll=False).
+    """
+    result = [None]
+    exception = [None]
+
+    def scan_thread():
+        try:
+            try:
+                from tinytuya import scanner
+                result[0] = scanner.devices(
+                    verbose=False,
+                    scantime=scan_seconds,
+                    color=False,
+                    poll=False,
+                    show_timer=False,
+                    wantids=[tuya_device_id],
+                    maxdevices=1,
+                    assume_yes=True,
+                )
+            except (ImportError, TypeError):
+                # tinytuya antigo sem wantids/maxdevices
+                result[0] = tinytuya.deviceScan(verbose=False, maxretry=scan_seconds, poll=False)
+        except Exception as e:
+            exception[0] = e
+
+    thread = threading.Thread(target=scan_thread, daemon=True)
+    thread.start()
+    thread.join(timeout=scan_seconds + 5)
+
+    if thread.is_alive():
+        log(f"[SCAN] Timeout após {scan_seconds + 5} segundos")
+        return None
+
+    if exception[0]:
+        log(f"[SCAN] Exceção durante scan: {exception[0]}")
+        return None
+
+    return result[0]
+
+def discover_tuya_ip(tuya_device_id: str, force: bool = False) -> Optional[str]:
+    """
+    Tenta descobrir o IP LAN de um dispositivo Tuya pelo gwId (device_id)
+    e guarda em cache. Com force=True ignora o cache (usar quando o IP atual falhou).
     """
     # se já descobrimos antes, usa o cache (com lock)
     with DEVICE_CACHE_LOCK:
-        if tuya_device_id in DEVICE_CACHE:
+        if not force and tuya_device_id in DEVICE_CACHE:
             ip_cached = DEVICE_CACHE[tuya_device_id]
             log(f"[DISCOVER] Usando IP em cache para {tuya_device_id}: {ip_cached}")
             return ip_cached
-    
+
     log(f"[DISCOVER] Varrendo a rede para encontrar o device_id = {tuya_device_id} ...")
-    
+
     try:
         # Usar timeout para evitar travamentos
-        devices = scan_with_timeout(30)  # 30 segundos de timeout
+        devices = scan_for_device_with_timeout(tuya_device_id)
         
         if devices is None:
             log(f"[DISCOVER] Timeout ou erro ao escanear dispositivos")
@@ -1776,7 +1868,7 @@ def refresh_devices_once() -> bool:
                     success = True
                 else:
                     log(f"[REFRESH] Falha {device_id} @ {lan_ip} (timeout/erro). Tentando redescobrir IP...")
-                    discovered_ip = discover_tuya_ip(device_id)
+                    discovered_ip = discover_tuya_ip(device_id, force=True)
                     if discovered_ip and discovered_ip != lan_ip:
                         lan_ip = discovered_ip
                         log(f"[REFRESH] IP redescoberto: {lan_ip}. Tentando status novamente...")
@@ -1901,93 +1993,88 @@ def send_tuya_command(
         d = tinytuya.OutletDevice(tuya_device_id, ip, local_key)
         d.set_version(version)
         return d
-    
-    # Preflight: verificar se a placa responde antes do comando
-    preflight_device = create_device(lan_ip)
-    preflight_status = tuya_status_with_timeout(preflight_device, timeout_seconds=COMMAND_PREFLIGHT_TIMEOUT_SECONDS)
-    if not preflight_status:
-        log(f"[INFO] Preflight falhou para {tuya_device_id} @ {lan_ip}. Tentando redescobrir IP...")
-        discovered_ip = discover_tuya_ip(tuya_device_id)
-        if discovered_ip:
-            lan_ip = discovered_ip
-            log(f"[INFO] IP redescoberto: {lan_ip}")
-            # atualizar cache após redescoberta
-            with DEVICE_CACHE_LOCK:
-                DEVICE_CACHE[tuya_device_id] = lan_ip
-    
-    last_error: Optional[Exception] = None
-    for attempt in range(1, COMMAND_MAX_RETRIES + 1):
-        try:
-            if attempt > 1:
-                log(f"[INFO] Tentativa {attempt}/{COMMAND_MAX_RETRIES} para enviar comando '{action}'")
-                time.sleep(COMMAND_RETRY_DELAY_SECONDS)
-            
-            d = create_device(lan_ip)
-            
-            # Usar função com timeout aumentado para 20s
-            resp = tuya_command_with_timeout(d, action, timeout_seconds=COMMAND_ACTION_TIMEOUT_SECONDS)
-            
-            if resp is None:
-                # Timeout - tentar novamente se ainda houver tentativas
-                if attempt < COMMAND_MAX_RETRIES:
-                    log(f"[INFO] Timeout na tentativa {attempt}, tentando novamente...")
-                    last_error = RuntimeError("Timeout ao enviar comando para dispositivo")
-                    continue
-                else:
-                    # Última tentativa falhou - limpar cache apenas se todas falharam
-                    log(f"[INFO] Todas as {COMMAND_MAX_RETRIES} tentativas falharam por timeout")
-                    with DEVICE_CACHE_LOCK:
-                        if tuya_device_id in DEVICE_CACHE:
-                            log(f"[INFO] Limpando cache de IP para {tuya_device_id} devido a timeout após {COMMAND_MAX_RETRIES} tentativas")
-                            del DEVICE_CACHE[tuya_device_id]
-                    raise RuntimeError(f"Timeout ao enviar comando para dispositivo após {COMMAND_MAX_RETRIES} tentativas")
-            
-            post_status = tuya_status_with_timeout(d, timeout_seconds=COMMAND_PREFLIGHT_TIMEOUT_SECONDS)
-            desired_state = action == "on"
-            actual_state = extract_tuya_power_state(post_status)
-            if actual_state is None:
-                raise RuntimeError("Não foi possível confirmar o estado final da placa após o comando")
-            if actual_state != desired_state:
-                raise RuntimeError(
-                    f"Comando enviado, mas a placa continuou {'ligada' if actual_state else 'desligada'}"
-                )
 
-            # Sucesso com confirmação do estado final.
+    # IP redescoberto recentemente tem prioridade sobre o que veio do banco/app
+    with DEVICE_CACHE_LOCK:
+        cached_ip = DEVICE_CACHE.get(tuya_device_id)
+    if cached_ip and cached_ip != lan_ip:
+        log(f"[INFO] Usando IP redescoberto em cache {cached_ip} (recebido: {lan_ip})")
+        lan_ip = cached_ip
+
+    deadline = time.monotonic() + COMMAND_TOTAL_DEADLINE_SECONDS
+    rediscovered = False
+
+    def rediscover(reason: str) -> None:
+        """Varre a rede uma única vez por comando, se ainda houver tempo no prazo."""
+        nonlocal lan_ip, rediscovered
+        if rediscovered:
+            return
+        rediscovered = True
+        if time.monotonic() + DISCOVER_SCAN_SECONDS > deadline:
+            log(f"[INFO] {reason}. Sem tempo para redescobrir IP dentro do prazo do comando")
+            return
+        log(f"[INFO] {reason}. Redescobrindo IP de {tuya_device_id}...")
+        discovered_ip = discover_tuya_ip(tuya_device_id, force=True)
+        if discovered_ip and discovered_ip != lan_ip:
+            log(f"[INFO] IP redescoberto: {lan_ip} -> {discovered_ip}")
+            lan_ip = discovered_ip
+
+    # Um comando por vez na mesma placa (toques repetidos do cliente entram em fila)
+    with get_device_command_lock(tuya_device_id):
+        # Preflight: verificar se a placa responde antes do comando
+        if not tuya_status_with_timeout(create_device(lan_ip), timeout_seconds=COMMAND_PREFLIGHT_TIMEOUT_SECONDS):
+            rediscover(f"Preflight falhou para {tuya_device_id} @ {lan_ip}")
+
+        last_error: Optional[Exception] = None
+        attempt = 0
+        for attempt in range(1, COMMAND_MAX_RETRIES + 1):
+            if attempt > 1:
+                if time.monotonic() + COMMAND_RETRY_DELAY_SECONDS >= deadline:
+                    log(f"[INFO] Prazo de {COMMAND_TOTAL_DEADLINE_SECONDS}s do comando esgotado")
+                    attempt -= 1
+                    break
+                log(f"[INFO] Tentativa {attempt}/{COMMAND_MAX_RETRIES} para enviar comando '{action}' @ {lan_ip}")
+                time.sleep(COMMAND_RETRY_DELAY_SECONDS)
+
+            remaining = deadline - time.monotonic()
+            action_timeout = max(3, min(COMMAND_ACTION_TIMEOUT_SECONDS, int(remaining)))
+            try:
+                resp = tuya_command_with_timeout(create_device(lan_ip), action, timeout_seconds=action_timeout)
+            except Exception as e:
+                last_error = e
+                log(f"[INFO] Erro na tentativa {attempt}/{COMMAND_MAX_RETRIES}: {e}")
+                rediscover(f"Comando '{action}' falhou @ {lan_ip}")
+                continue
+
+            unreachable = tuya_unreachable_error(resp)
+            if unreachable:
+                last_error = RuntimeError(unreachable)
+                log(f"[INFO] Placa não recebeu o comando na tentativa {attempt}/{COMMAND_MAX_RETRIES}: {unreachable}")
+                rediscover(f"Comando '{action}' não chegou @ {lan_ip}")
+                continue
+
+            # A placa aceitou o comando. Não relemos o status para "confirmar": numa placa de pulso
+            # ela já pode ter desligado sozinha, o que gerava erro falso e um segundo pulso.
+            if isinstance(resp, dict) and "Error" in resp:
+                log(f"[INFO] Placa respondeu com aviso (comando considerado entregue): {resp}")
             log(f"[DEBUG] Resposta do dispositivo: {resp}")
-            log(f"[DEBUG] Status confirmado após comando: {post_status}")
             if attempt > 1:
                 log(f"[INFO] Comando enviado com sucesso na tentativa {attempt}")
             return {
                 "command_response": resp,
-                "confirmed_status": post_status,
+                "confirmed_status": None,
+                "attempts": attempt,
+                "lan_ip": lan_ip,
             }
-        
-        except Exception as e:
-            last_error = e
-            log(f"[INFO] Erro na tentativa {attempt}/{COMMAND_MAX_RETRIES}: {e}")
-            
-            # Se não for a última tentativa, continuar
-            if attempt < COMMAND_MAX_RETRIES:
-                log(f"[INFO] Tentando novamente...")
-                # Tentar redescobrir IP antes da próxima tentativa
-                discovered_ip = discover_tuya_ip(tuya_device_id)
-                if discovered_ip:
-                    lan_ip = discovered_ip
-                    log(f"[INFO] IP redescoberto antes da próxima tentativa: {lan_ip}")
-                continue
-            else:
-                # Última tentativa falhou - limpar cache apenas se todas falharam
-                log(f"[INFO] Todas as {COMMAND_MAX_RETRIES} tentativas falharam")
-                with DEVICE_CACHE_LOCK:
-                    if tuya_device_id in DEVICE_CACHE:
-                        log(f"[INFO] Limpando cache de IP para {tuya_device_id} devido a erro após {COMMAND_MAX_RETRIES} tentativas")
-                        del DEVICE_CACHE[tuya_device_id]
-                raise RuntimeError(f"Erro ao enviar comando para dispositivo após {COMMAND_MAX_RETRIES} tentativas: {e}")
-    
-    # Se chegou aqui, todas as tentativas falharam
-    if last_error:
-        raise last_error
-    raise RuntimeError("Erro desconhecido ao enviar comando para dispositivo")
+
+    log(f"[INFO] Comando '{action}' falhou após {attempt} tentativa(s)")
+    with DEVICE_CACHE_LOCK:
+        if tuya_device_id in DEVICE_CACHE:
+            log(f"[INFO] Limpando cache de IP para {tuya_device_id}")
+            del DEVICE_CACHE[tuya_device_id]
+    raise RuntimeError(
+        f"Placa não respondeu ao comando '{action}' após {attempt} tentativa(s) @ {lan_ip}: {last_error}"
+    )
 
 # =========================
 # API HTTP
@@ -2129,7 +2216,8 @@ def api_status():
         "needs_setup": not _is_site_configured(),
         "version": APP_VERSION,
         "db_configured": bool(SUPABASE_CONFIG.get("url") and SUPABASE_CONFIG.get("anon_key")),
-        "realtime_connected": REMOTE_COMMAND_WS_APP is not None,
+        "realtime_connected": remote_listener_healthy(),
+        **get_remote_listener_status(),
         "devices_cached": len(device_ids),
         "devices_in_db": devices_in_db,
     }), 200
@@ -2497,6 +2585,38 @@ def _collect_system_metrics() -> Dict[str, Any]:
         pass
     return metrics
 
+_REMOTE_STATUS_COLUMNS_MISSING = False
+
+def _log_remote_listener_status(base_url: str) -> None:
+    """
+    Grava em pi_system_logs se o canal de comandos está vivo. Separado do upsert principal
+    porque depende das colunas de docs/pi_system_logs_realtime_status.sql.
+    """
+    global _REMOTE_STATUS_COLUMNS_MISSING
+    if _REMOTE_STATUS_COLUMNS_MISSING:
+        return
+    status = get_remote_listener_status()
+    poll_age = status.get("command_poll_age_s")
+    payload = {
+        "realtime_ok": status["realtime_ok"],
+        "realtime_reconnects": status["realtime_reconnects"],
+        "command_poll_ok": poll_age is not None and poll_age < 60,
+    }
+    try:
+        r = requests.patch(
+            f"{base_url}/pi_system_logs?site_id=eq.{SITE_NAME}",
+            json=payload,
+            headers={**get_supabase_headers(), "Prefer": "return=minimal"},
+            timeout=15,
+        )
+        if r.status_code == 400 and "column" in r.text:
+            _REMOTE_STATUS_COLUMNS_MISSING = True
+            log("[SYSLOG] Colunas de status do Realtime ausentes em pi_system_logs; rode docs/pi_system_logs_realtime_status.sql")
+            return
+        r.raise_for_status()
+    except Exception as e:
+        log(f"[SYSLOG] Erro ao gravar status do canal de comandos: {e}")
+
 def _log_system_metrics(wifi_speed_mbps: float = 0.0) -> None:
     """Upsert em pi_system_logs — mantém uma linha por site_id, sempre atualizada."""
     if not REQUESTS_AVAILABLE or not SUPABASE_CONFIG.get("url"):
@@ -2521,6 +2641,7 @@ def _log_system_metrics(wifi_speed_mbps: float = 0.0) -> None:
         r.raise_for_status()
         global _LAST_SYSLOG_AT
         _LAST_SYSLOG_AT = now_iso
+        _log_remote_listener_status(base_url)
         log(
             f"[SYSLOG] Métricas atualizadas — "
             f"temp={metrics.get('temp_c','?')}°C  "
@@ -3572,8 +3693,40 @@ def process_remote_command_record(record: Dict[str, Any]) -> None:
         else:
             update_remote_command_status(command_id, "error", error_message=err)
 
-def handle_remote_realtime_message(message: str) -> None:
+def mark_remote_listener_alive() -> None:
+    REMOTE_LISTENER_STATE["last_message_at"] = time.monotonic()
+
+def remote_listener_healthy() -> bool:
+    """True se o canal Realtime está conectado, com join confirmado e recebendo mensagens."""
+    return (
+        REMOTE_LISTENER_STATE["joined"]
+        and time.monotonic() - REMOTE_LISTENER_STATE["last_message_at"] < REMOTE_COMMAND_STALE_SECONDS
+    )
+
+def get_remote_listener_status() -> Dict[str, Any]:
+    now = time.monotonic()
+    last_msg = REMOTE_LISTENER_STATE["last_message_at"]
+    last_poll = REMOTE_LISTENER_STATE["last_poll_ok_at"]
+    return {
+        "realtime_ok": remote_listener_healthy(),
+        "realtime_connected_at": REMOTE_LISTENER_STATE["connected_at"],
+        "realtime_last_message_age_s": int(now - last_msg) if last_msg else None,
+        "realtime_reconnects": REMOTE_LISTENER_STATE["reconnects"],
+        "command_poll_age_s": int(now - last_poll) if last_poll else None,
+    }
+
+def close_remote_ws(ws_app: Any, reason: str) -> None:
+    """Fecha o websocket para forçar reconexão pelo loop principal."""
+    log(f"[REMOTE] Reconectando Realtime: {reason}")
+    REMOTE_LISTENER_STATE["joined"] = False
+    try:
+        ws_app.close()
+    except Exception as e:
+        log(f"[REMOTE] Erro ao fechar websocket: {e}")
+
+def handle_remote_realtime_message(message: str, ws_app: Any = None, join_ref: Optional[str] = None) -> None:
     """Processa mensagens recebidas do websocket Realtime."""
+    mark_remote_listener_alive()
     try:
         payload = json.loads(message)
     except json.JSONDecodeError:
@@ -3582,14 +3735,35 @@ def handle_remote_realtime_message(message: str) -> None:
 
     event = payload.get("event")
     topic = payload.get("topic")
+    inner = payload.get("payload") or {}
 
-    if event in ("phx_reply", "system", "heartbeat"):
+    if event == "phx_reply" and topic == REMOTE_COMMAND_TOPIC and join_ref and payload.get("ref") == join_ref:
+        if inner.get("status") == "ok":
+            REMOTE_LISTENER_STATE["joined"] = True
+            log(f"[REMOTE] Inscrito no canal de comandos para site_id={SITE_NAME}")
+            # Pega o que chegou enquanto estava desconectado
+            threading.Thread(target=poll_pending_remote_commands, daemon=True).start()
+        elif ws_app is not None:
+            close_remote_ws(ws_app, f"join recusado pelo Realtime: {str(inner)[:200]}")
+        return
+
+    if topic == REMOTE_COMMAND_TOPIC and event in ("phx_close", "phx_error"):
+        if ws_app is not None:
+            close_remote_ws(ws_app, f"canal encerrado pelo Realtime ({event})")
+        return
+
+    if event == "system":
+        if inner.get("status") == "error" and ws_app is not None:
+            close_remote_ws(ws_app, f"erro do Realtime: {str(inner.get('message') or inner)[:200]}")
+        return
+
+    if event in ("phx_reply", "heartbeat"):
         return
 
     if topic != REMOTE_COMMAND_TOPIC or event != "postgres_changes":
         return
 
-    data = payload.get("payload", {}).get("data", {})
+    data = inner.get("data", {})
     record = data.get("record") or {}
     if not isinstance(record, dict):
         return
@@ -3601,12 +3775,24 @@ def handle_remote_realtime_message(message: str) -> None:
     ).start()
 
 def send_remote_realtime_heartbeat(ws_app: Any) -> None:
-    """Envia heartbeats do protocolo Phoenix enquanto o websocket estiver aberto."""
+    """
+    Envia heartbeats do protocolo Phoenix enquanto o websocket estiver aberto
+    e derruba a conexão se o Realtime parar de responder (conexão meio-morta).
+    """
     while True:
         time.sleep(REMOTE_COMMAND_HEARTBEAT_SECONDS)
         with REMOTE_COMMAND_WS_LOCK:
             active_ws = REMOTE_COMMAND_WS_APP
         if active_ws is not ws_app:
+            return
+        silent_for = time.monotonic() - REMOTE_LISTENER_STATE["last_message_at"]
+        if silent_for > REMOTE_COMMAND_STALE_SECONDS:
+            insert_tuya_server_event(
+                "realtime_stale",
+                "Canal de comandos sem resposta; reconectando.",
+                {"silent_seconds": int(silent_for), **get_app_trace_result()},
+            )
+            close_remote_ws(ws_app, f"sem mensagens do Realtime há {int(silent_for)}s")
             return
         try:
             ws_app.send(json.dumps({
@@ -3617,6 +3803,7 @@ def send_remote_realtime_heartbeat(ws_app: Any) -> None:
             }))
         except Exception as e:
             log(f"[REMOTE] Erro ao enviar heartbeat Realtime: {e}")
+            close_remote_ws(ws_app, "falha ao enviar heartbeat")
             return
 
 def remote_command_listener_loop() -> None:
@@ -3640,17 +3827,22 @@ def remote_command_listener_loop() -> None:
                     }]
                 }
             }
+            join_ref_holder: Dict[str, Optional[str]] = {"ref": None}
 
             def on_open(ws_app: Any) -> None:
                 with REMOTE_COMMAND_WS_LOCK:
                     global REMOTE_COMMAND_WS_APP
                     REMOTE_COMMAND_WS_APP = ws_app
+                REMOTE_LISTENER_STATE["joined"] = False
+                REMOTE_LISTENER_STATE["connected_at"] = current_timestamp_iso()
+                mark_remote_listener_alive()
                 log(f"[REMOTE] Conectado ao Realtime para site_id={SITE_NAME}")
+                join_ref_holder["ref"] = next_remote_command_ref()
                 ws_app.send(json.dumps({
                     "topic": REMOTE_COMMAND_TOPIC,
                     "event": "phx_join",
                     "payload": join_payload,
-                    "ref": next_remote_command_ref()
+                    "ref": join_ref_holder["ref"]
                 }))
                 threading.Thread(
                     target=send_remote_realtime_heartbeat,
@@ -3658,8 +3850,11 @@ def remote_command_listener_loop() -> None:
                     daemon=True
                 ).start()
 
-            def on_message(_: Any, message: str) -> None:
-                handle_remote_realtime_message(message)
+            def on_message(ws_app: Any, message: str) -> None:
+                handle_remote_realtime_message(message, ws_app=ws_app, join_ref=join_ref_holder["ref"])
+
+            def on_pong(_: Any, __: Any) -> None:
+                mark_remote_listener_alive()
 
             def on_error(_: Any, error: Any) -> None:
                 log(f"[REMOTE] Erro no websocket Realtime: {error}")
@@ -3668,24 +3863,103 @@ def remote_command_listener_loop() -> None:
                 with REMOTE_COMMAND_WS_LOCK:
                     global REMOTE_COMMAND_WS_APP
                     REMOTE_COMMAND_WS_APP = None
+                REMOTE_LISTENER_STATE["joined"] = False
                 log(f"[REMOTE] Websocket Realtime encerrado (code={status_code}, msg={close_msg})")
 
             ws_app = websocket.WebSocketApp(
                 ws_url,
                 on_open=on_open,
                 on_message=on_message,
+                on_pong=on_pong,
                 on_error=on_error,
                 on_close=on_close
             )
-            ws_app.run_forever(ping_interval=0)
+            # Ping/pong do websocket detecta conexão meio-morta (Wi-Fi oscilou, roteador derrubou o NAT)
+            ws_app.run_forever(
+                ping_interval=REMOTE_COMMAND_WS_PING_INTERVAL,
+                ping_timeout=REMOTE_COMMAND_WS_PING_TIMEOUT,
+            )
         except Exception as e:
             log(f"[REMOTE] Listener Realtime caiu: {e}")
             traceback.print_exc()
 
+        REMOTE_LISTENER_STATE["joined"] = False
+        REMOTE_LISTENER_STATE["reconnects"] += 1
         time.sleep(REMOTE_COMMAND_RECONNECT_SECONDS)
 
+def parse_iso_timestamp(value: Any) -> Optional[datetime]:
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+def poll_pending_remote_commands() -> None:
+    """
+    Busca comandos que ficaram 'pending' (o Realtime não entregou ou estava caído).
+    Recentes são executados; antigos são marcados como expirados.
+    A execução passa por claim_remote_command, então não duplica com o Realtime.
+    """
+    if not REQUESTS_AVAILABLE or not SUPABASE_CONFIG.get("url") or not SITE_NAME:
+        return
+    try:
+        url = (
+            f"{get_supabase_url()}/{REMOTE_COMMAND_TABLE}"
+            f"?site_id=eq.{SITE_NAME}&status=eq.pending&order=created_at.asc&limit=20"
+        )
+        response = requests.get(url, headers=get_supabase_headers(), timeout=10)
+        response.raise_for_status()
+        rows = response.json() or []
+    except Exception as e:
+        log(f"[REMOTE] Erro ao buscar comandos pendentes: {e}")
+        return
+
+    REMOTE_LISTENER_STATE["last_poll_ok_at"] = time.monotonic()
+    if not rows:
+        return
+
+    # Relógio do servidor do banco (o Pi pode estar com a hora errada)
+    try:
+        now = parsedate_to_datetime(response.headers["Date"])
+    except Exception:
+        now = datetime.now(timezone.utc)
+
+    for record in rows:
+        command_id = record.get("id")
+        action = record.get("action")
+        created_at = parse_iso_timestamp(record.get("created_at"))
+        max_age = REMOTE_COMMAND_MAX_AGE_SECONDS.get(action, REMOTE_COMMAND_DEFAULT_MAX_AGE_SECONDS)
+        age = (now - created_at).total_seconds() if created_at else 0
+
+        if age > max_age:
+            if claim_remote_command(command_id):
+                log(f"[REMOTE] Comando {command_id} ({action}) expirado: {int(age)}s de atraso")
+                update_remote_command_status(
+                    command_id,
+                    "error",
+                    error_message=f"Expirado: comando não chegou ao servidor a tempo ({int(age)}s de atraso)",
+                )
+            continue
+
+        log(f"[REMOTE] Comando pendente {command_id} ({action}) recuperado pela busca periódica ({int(age)}s)")
+        threading.Thread(target=process_remote_command_record, args=(record,), daemon=True).start()
+
+def remote_command_poll_loop() -> None:
+    """Rede de segurança do Realtime: busca pendentes a cada poucos segundos."""
+    while True:
+        try:
+            poll_pending_remote_commands()
+        except Exception as e:
+            log(f"[REMOTE] Erro no loop de busca de pendentes: {e}")
+        time.sleep(
+            REMOTE_COMMAND_POLL_HEALTHY_SECONDS
+            if remote_listener_healthy()
+            else REMOTE_COMMAND_POLL_UNHEALTHY_SECONDS
+        )
+
 def start_remote_command_listener() -> None:
-    """Inicia o listener Realtime uma única vez."""
+    """Inicia o listener Realtime e a busca periódica de pendentes uma única vez."""
     global REMOTE_COMMAND_LISTENER_STARTED
     with REMOTE_COMMAND_LISTENER_LOCK:
         if REMOTE_COMMAND_LISTENER_STARTED:
@@ -3693,6 +3967,10 @@ def start_remote_command_listener() -> None:
 
         threading.Thread(
             target=remote_command_listener_loop,
+            daemon=True
+        ).start()
+        threading.Thread(
+            target=remote_command_poll_loop,
             daemon=True
         ).start()
         REMOTE_COMMAND_LISTENER_STARTED = True

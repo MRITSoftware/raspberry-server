@@ -595,7 +595,10 @@ async function loadStatus() {
         }
         set('st-server',   dot('green') + 'Online');
         set('st-banco', d.db_configured ? dot('green') + 'OK' : dot('red') + 'Não configurado');
-        set('st-realtime', d.realtime_connected   ? dot('green') + 'Conectado' : dot('yellow') + 'Conectando...');
+        const pollOk = d.command_poll_age_s !== null && d.command_poll_age_s < 60;
+        set('st-realtime', d.realtime_connected ? dot('green') + 'Conectado'
+            : pollOk ? dot('yellow') + 'Reconectando (comandos via busca)'
+            : dot('red') + 'Sem receber comandos');
         const inDb = d.devices_in_db;
         if (inDb === 0) {
             set('st-devices', dot('red') + 'Sem placa');
