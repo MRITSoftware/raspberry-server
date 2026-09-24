@@ -17,7 +17,7 @@ insert into public.tuya_server_releases (
 )
 values (
   'stable',
-  '1.1.0',  -- mesma versao de APP_VERSION em tuya_server.py
+  '1.1.0-PI',  -- mesma versao de APP_VERSION em tuya_server.py
   'COMMIT_COMPLETO_AQUI',
   'COMMIT_CURTO_AQUI',
   'main',
