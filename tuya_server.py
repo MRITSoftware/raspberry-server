@@ -91,7 +91,7 @@ COMMAND_TOTAL_DEADLINE_SECONDS = 30  # tempo máximo de um comando on/off, inclu
 DISCOVER_SCAN_SECONDS = 12  # varredura UDP para redescobrir IP (para antes se achar a placa)
 REFRESH_FAIL_COUNTS: Dict[str, int] = {}
 REFRESH_LAST_STATUS: Dict[str, bool] = {}
-APP_VERSION = "1.1-PI-command-reliability"
+APP_VERSION = "1.1.0"  # MAJOR.MINOR.PATCH: PATCH = correcao, MINOR = funcionalidade nova
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVICE_STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
