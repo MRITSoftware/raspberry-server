@@ -77,6 +77,17 @@ http://gelafit-pi.local
 
 **Senha:** `GELAFIT#REDE`
 
+### Definir uma nova senha SSH pelo painel
+
+Na aba **Sistema**, use **Senha de acesso SSH**. Confirme a senha do painel e
+digite a nova senha duas vezes (12 a 128 caracteres). Isso altera somente a senha
+Linux do usuário que executa o serviço, normalmente `mrit`; a senha do painel
+continua igual. Não é necessário informar a senha SSH anterior.
+
+O recurso exige uma sessão autenticada e a permissão `sudo` configurada pelo
+instalador. Não permite alterar a senha de `root` nem escolher outro usuário.
+Uma troca de senha não corrige travamentos ou lentidão de uma sessão SSH.
+
 ---
 
 ## Passo 6 — Configurar o e-mail da unidade (primeiro acesso)

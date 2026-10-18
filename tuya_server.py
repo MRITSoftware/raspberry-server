@@ -2085,6 +2085,9 @@ app.secret_key = b'mrit-gelafit-server-secret-2024'
 
 PANEL_PASSWORD = "GELAFIT#REDE"
 
+from system_password import register_system_password
+register_system_password(app, PANEL_PASSWORD)
+
 @app.before_request
 def check_auth():
     public = {'/health', '/login'}

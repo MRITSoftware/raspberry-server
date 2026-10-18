@@ -326,6 +326,16 @@
         </div>
         <div id="sys-msg"></div>
         <hr class="section-divider">
+        <div class="card-title" style="margin-bottom:10px;">Senha de acesso SSH</div>
+        <p>Defina uma nova senha para o usuário do Raspberry. A senha do painel continua a mesma.</p>
+        <form id="ssh-password-form" onsubmit="changeSshPassword(event)">
+            <div class="field"><label for="ssh-panel-password">Confirme a senha do painel</label><input id="ssh-panel-password" type="password" autocomplete="off" required></div>
+            <div class="field"><label for="ssh-new-password">Nova senha SSH (12 a 128 caracteres)</label><input id="ssh-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></div>
+            <div class="field"><label for="ssh-confirm-password">Repita a nova senha</label><input id="ssh-confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></div>
+            <button class="btn btn-primary" id="btn-ssh-password" type="submit">Alterar senha SSH</button>
+        </form>
+        <div id="ssh-password-msg" role="status"></div>
+        <hr class="section-divider">
         <div class="card-title" style="margin-bottom:10px;">Atualizações</div>
         <div class="actions" style="margin-bottom:8px;">
             <button class="btn btn-ghost" id="btn-check-update" onclick="checkUpdate()">Verificar Atualizações</button>
@@ -538,6 +548,40 @@ async function setupSaveEmail() {
 }
 
 // ── Atualizações ──────────────────────────────────────
+async function changeSshPassword(event) {
+    event.preventDefault();
+    const btn = document.getElementById('btn-ssh-password');
+    const msg = document.getElementById('ssh-password-msg');
+    const form = document.getElementById('ssh-password-form');
+    if (document.getElementById('ssh-new-password').value !== document.getElementById('ssh-confirm-password').value) {
+        msg.textContent = 'As novas senhas não conferem.';
+        return;
+    }
+    btn.disabled = true;
+    msg.textContent = 'Alterando senha...';
+    try {
+        const info = await get('/api/system/password');
+        if (!info.ok) throw new Error(info.error || 'Troca indisponível.');
+        const response = await fetch('/api/system/password', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': info.csrf_token},
+            body: JSON.stringify({
+                panel_password: document.getElementById('ssh-panel-password').value,
+                new_password: document.getElementById('ssh-new-password').value,
+                confirm_password: document.getElementById('ssh-confirm-password').value,
+            }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || 'Não foi possível alterar a senha.');
+        msg.textContent = result.message;
+    } catch (error) {
+        msg.textContent = error.message;
+    } finally {
+        form.reset();
+        btn.disabled = false;
+    }
+}
+
 async function checkUpdate() {
     const btn = document.getElementById('btn-check-update');
     const msg = document.getElementById('update-msg');
