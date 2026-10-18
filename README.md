@@ -88,6 +88,19 @@ O recurso exige uma sessão autenticada e a permissão `sudo` configurada pelo
 instalador. Não permite alterar a senha de `root` nem escolher outro usuário.
 Uma troca de senha não corrige travamentos ou lentidão de uma sessão SSH.
 
+### Executar comandos pelo painel
+
+Em **Sistema → Terminal do Raspberry**, confirme a senha do painel para liberar
+comandos por 10 minutos. A saída aparece durante a execução, com código de saída
+ao terminar e opção de cancelar. Há um comando por vez e limites de 10, 30 ou 120
+segundos. A saída exibe no máximo os últimos 64 KB e fica somente na memória.
+
+Cada comando inicia na pasta do servidor, como o usuário do serviço. Para trocar
+de pasta, use `cd /caminho && comando` na mesma execução. Use `sudo -n` quando
+necessário. Não é um terminal interativo: comandos que pedem senha, editores e
+sessões SSH interativas não funcionam. Não há histórico persistente. Reiniciar o
+serviço encerra a conexão com a página; recarregue após ele voltar.
+
 ---
 
 ## Passo 6 — Configurar o e-mail da unidade (primeiro acesso)

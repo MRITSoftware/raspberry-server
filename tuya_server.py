@@ -2087,6 +2087,8 @@ PANEL_PASSWORD = "GELAFIT#REDE"
 
 from system_password import register_system_password
 register_system_password(app, PANEL_PASSWORD)
+from system_terminal import register_system_terminal
+register_system_terminal(app, PANEL_PASSWORD, BASE_DIR)
 
 @app.before_request
 def check_auth():

@@ -326,6 +326,24 @@
         </div>
         <div id="sys-msg"></div>
         <hr class="section-divider">
+        <div class="card-title" style="margin-bottom:10px;">Terminal do Raspberry</div>
+        <p>Execute comandos sem abrir o SSH. Cada execução começa na pasta do servidor. Para comandos administrativos, use <code>sudo -n</code>. Comandos que pedem senha ou interação não são suportados.</p>
+        <form id="terminal-unlock-form" onsubmit="unlockTerminal(event)">
+            <div class="field"><label for="terminal-panel-password">Senha do painel (libera por 10 minutos)</label><input id="terminal-panel-password" type="password" autocomplete="off" required></div>
+            <button class="btn btn-primary" type="submit" id="btn-terminal-unlock">Liberar terminal</button>
+        </form>
+        <form id="terminal-command-form" onsubmit="executeTerminal(event)" hidden>
+            <div class="field"><label for="terminal-command">Comando</label><textarea id="terminal-command" rows="4" maxlength="8192" required spellcheck="false" style="width:100%;box-sizing:border-box;font-family:monospace;padding:10px;" placeholder="hostname -I"></textarea></div>
+            <div class="actions">
+                <label for="terminal-timeout">Tempo limite</label>
+                <select id="terminal-timeout"><option value="10">10 segundos</option><option value="30" selected>30 segundos</option><option value="120">2 minutos</option></select>
+                <button class="btn btn-primary" id="btn-terminal-execute" type="submit">Executar</button>
+                <button class="btn btn-warn" id="btn-terminal-cancel" type="button" onclick="cancelTerminal()" disabled>Cancelar</button>
+            </div>
+        </form>
+        <div id="terminal-msg" role="status"></div>
+        <pre class="logs-box" id="terminal-output" style="white-space:pre-wrap;overflow-wrap:anywhere;" aria-label="Saída do comando">A saída aparecerá aqui.</pre>
+        <hr class="section-divider">
         <div class="card-title" style="margin-bottom:10px;">Senha de acesso SSH</div>
         <p>Defina uma nova senha para o usuário do Raspberry. A senha do painel continua a mesma.</p>
         <form id="ssh-password-form" onsubmit="changeSshPassword(event)">
@@ -548,6 +566,87 @@ async function setupSaveEmail() {
 }
 
 // ── Atualizações ──────────────────────────────────────
+let terminalCsrf = '';
+let terminalJobId = '';
+
+async function terminalRequest(path, method, body) {
+    const response = await fetch('/api/system/terminal' + path, {
+        method, headers: {'Content-Type': 'application/json', 'X-CSRF-Token': terminalCsrf},
+        ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || 'Falha no terminal.');
+    return data;
+}
+
+async function unlockTerminal(event) {
+    event.preventDefault();
+    const btn = document.getElementById('btn-terminal-unlock');
+    const msg = document.getElementById('terminal-msg');
+    const password = document.getElementById('terminal-panel-password');
+    btn.disabled = true;
+    try {
+        const info = await terminalRequest('', 'GET');
+        terminalCsrf = info.csrf_token;
+        await terminalRequest('/unlock', 'POST', {password: password.value});
+        document.getElementById('terminal-command-form').hidden = false;
+        msg.textContent = 'Terminal liberado por 10 minutos.';
+    } catch (error) {
+        msg.textContent = error.message;
+    } finally {
+        password.value = '';
+        btn.disabled = false;
+    }
+}
+
+async function executeTerminal(event) {
+    event.preventDefault();
+    const btn = document.getElementById('btn-terminal-execute');
+    const cancel = document.getElementById('btn-terminal-cancel');
+    const msg = document.getElementById('terminal-msg');
+    const output = document.getElementById('terminal-output');
+    btn.disabled = true;
+    try {
+        const job = await terminalRequest('/execute', 'POST', {
+            command: document.getElementById('terminal-command').value,
+            timeout: Number(document.getElementById('terminal-timeout').value),
+        });
+        terminalJobId = job.job_id;
+        cancel.disabled = false;
+        output.textContent = '';
+        msg.textContent = 'Executando...';
+        while (terminalJobId) {
+            const result = await terminalRequest('/jobs/' + encodeURIComponent(terminalJobId), 'GET');
+            output.textContent = result.output || '(sem saída)';
+            output.scrollTop = output.scrollHeight;
+            if (result.finished) {
+                const labels = {done: 'Concluído', timeout: 'Tempo limite atingido', cancelled: 'Cancelado', error: 'Falha'};
+                msg.textContent = (labels[result.status] || result.status) +
+                    (result.exit_code === null ? '' : ' · código de saída: ' + result.exit_code) +
+                    (result.truncated ? ' · exibindo os últimos 64 KB' : '');
+                break;
+            }
+            await new Promise(resolve => setTimeout(resolve, 750));
+        }
+    } catch (error) {
+        msg.textContent = error.message + ' Se o comando reiniciou o serviço, recarregue a página.';
+    } finally {
+        terminalJobId = '';
+        btn.disabled = false;
+        cancel.disabled = true;
+    }
+}
+
+async function cancelTerminal() {
+    if (!terminalJobId) return;
+    try {
+        await terminalRequest('/jobs/' + encodeURIComponent(terminalJobId), 'DELETE');
+        document.getElementById('terminal-msg').textContent = 'Cancelamento solicitado...';
+    } catch (error) {
+        document.getElementById('terminal-msg').textContent = error.message;
+    }
+}
+
 async function changeSshPassword(event) {
     event.preventDefault();
     const btn = document.getElementById('btn-ssh-password');
