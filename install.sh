@@ -56,7 +56,7 @@ sudo systemctl enable mrit-server
 sudo systemctl start mrit-server
 
 # Instalar hostapd e dnsmasq para hotspot
-sudo apt-get install -y hostapd dnsmasq iptables-persistent -qq
+sudo apt-get install -y hostapd dnsmasq iw iptables-persistent -qq
 sudo systemctl stop hostapd dnsmasq 2>/dev/null || true
 sudo systemctl disable hostapd dnsmasq 2>/dev/null || true
 

@@ -132,6 +132,9 @@ A versao `1.0-PI-wifi-rescue` tem protecoes para evitar formatar o cartao SD:
 - Antes de trocar ou salvar rede, o painel pede confirmacao e permite mostrar a senha digitada.
 - Se a troca de WiFi falhar, o Pi tenta restaurar automaticamente o hotspot `GelaFit-Setup` / `rede#gelafit@123`.
 - Se a rede reserva falhar ou ficar sem internet, o Pi tambem volta para o hotspot.
+- Com o hotspot ligado, tenta recuperar a internet pelas redes WiFi salvas e pela reserva a cada 5 minutos. Se nenhuma funcionar, restaura o hotspot.
+- Enquanto houver qualquer dispositivo associado ao hotspot, a recuperacao fica adiada. Depois da desconexao, a verificacao seguinte ocorre em ate cerca de 1 minuto, se os 5 minutos ja passaram.
+- A consulta de clientes usa `iw`. Se ela falhar, o hotspot e preservado. Ao atualizar uma instalacao existente, execute `sudo apt-get install -y iw` e reinicie o servico com `sudo systemctl restart mrit-server`.
 
 Para uma unidade que ja ficou presa antes dessa versao, tente primeiro:
 

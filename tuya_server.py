@@ -14,6 +14,7 @@ from email.utils import parsedate_to_datetime
 
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from functools import wraps
+from wifi_recovery import WifiRecovery
 import tinytuya
 
 # =========================
@@ -2289,6 +2290,15 @@ def _nmcli(*args, sudo=False, timeout=30) -> subprocess.CompletedProcess:
 
 DEFAULT_HOTSPOT_SSID = "GelaFit-Setup"
 DEFAULT_HOTSPOT_PASSWORD = "rede#gelafit@123"
+_WIFI_OPERATION_LOCK = threading.RLock()
+
+
+def _serialized_wifi_operation(func):
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        with _WIFI_OPERATION_LOCK:
+            return func(*args, **kwargs)
+    return wrapped
 
 def _parse_nmcli_terse(output: str, num_fields: int) -> List[List[str]]:
     """Divide linhas do nmcli -t respeitando ':' escapados como '\\:'."""
@@ -2354,6 +2364,7 @@ def _connect_wifi_profile(ssid: str, password: str, timeout: int = 45) -> Tuple[
     except Exception as e:
         return False, str(e)
 
+@_serialized_wifi_operation
 def _ensure_rescue_hotspot(reason: str = "") -> bool:
     if reason:
         log(f"[WIFI] Acionando hotspot de resgate: {reason}")
@@ -2430,6 +2441,7 @@ def api_wifi_scan():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/wifi/connect", methods=["POST"])
+@_serialized_wifi_operation
 def api_wifi_connect():
     data = request.get_json(silent=True) or {}
     ssid = data.get("ssid", "").strip()
@@ -2443,6 +2455,7 @@ def api_wifi_connect():
     if was_hotspot:
         # Em modo hotspot: dispara em background para responder ANTES de derrubar o AP.
         # O cliente recebe a resposta enquanto o hotspot ainda está no ar, depois o AP cai.
+        @_serialized_wifi_operation
         def _do_connect_bg():
             time.sleep(0.8)  # garante que a resposta HTTP foi entregue ao cliente
             _stop_hotspot_internal()
@@ -2695,9 +2708,12 @@ def _connectivity_watch_loop():
 
     while True:
         time.sleep(60)
-        if _hotspot_running():
-            _CONNECTIVITY_FAIL_COUNT = 0
-            continue
+        with _WIFI_OPERATION_LOCK:
+            if _hotspot_running():
+                _CONNECTIVITY_FAIL_COUNT = 0
+                if _WIFI_RECOVERY.try_reconnect(dict(BACKUP_WIFI)):
+                    threading.Thread(target=_send_server_heartbeat, daemon=True).start()
+                continue
         if _check_connectivity():
             if _CONNECTIVITY_FAIL_COUNT > 0:
                 log("[WIFI] Conectividade restaurada — enviando heartbeat imediato")
@@ -2742,6 +2758,7 @@ def _hotspot_running() -> bool:
     r = subprocess.run(["pgrep", "-F", HOTSPOT_PID_PATH], capture_output=True)
     return r.returncode == 0
 
+@_serialized_wifi_operation
 def _start_hotspot_internal(ssid: str = "GelaFit-Setup", password: str = "rede#gelafit@123"):
     """Inicia o hotspot via hostapd. Retorna (ok, error_msg)."""
     try:
@@ -2786,6 +2803,7 @@ def _start_hotspot_internal(ssid: str = "GelaFit-Setup", password: str = "rede#g
             ["sudo", "dnsmasq", f"--conf-file={DNSMASQ_CONF_PATH}", f"--pid-file={DNSMASQ_PID_PATH}"],
             capture_output=True, timeout=10
         )
+        _WIFI_RECOVERY.hotspot_started()
         log(f"[WIFI] Hotspot iniciado: SSID={ssid}")
         return True, ""
     except subprocess.TimeoutExpired:
@@ -2793,6 +2811,7 @@ def _start_hotspot_internal(ssid: str = "GelaFit-Setup", password: str = "rede#g
     except Exception as e:
         return False, str(e)
 
+@_serialized_wifi_operation
 def _stop_hotspot_internal():
     """Para o hotspot e devolve wlan0 ao NetworkManager."""
     subprocess.run(["sudo", "pkill", "-F", HOTSPOT_PID_PATH], capture_output=True, timeout=10)
@@ -2800,6 +2819,11 @@ def _stop_hotspot_internal():
     time.sleep(1)
     subprocess.run(["sudo", "ip", "addr", "flush", "dev", "wlan0"], capture_output=True, timeout=5)
     subprocess.run(["sudo", "nmcli", "device", "set", "wlan0", "managed", "yes"], capture_output=True, timeout=10)
+
+_WIFI_RECOVERY = WifiRecovery(
+    _nmcli, _check_connectivity, _stop_hotspot_internal, _ensure_rescue_hotspot, log,
+)
+
 
 @app.route("/api/wifi/hotspot/status", methods=["GET"])
 def api_hotspot_status():
