@@ -92,7 +92,7 @@ COMMAND_TOTAL_DEADLINE_SECONDS = 30  # tempo máximo de um comando on/off, inclu
 DISCOVER_SCAN_SECONDS = 12  # varredura UDP para redescobrir IP (para antes se achar a placa)
 REFRESH_FAIL_COUNTS: Dict[str, int] = {}
 REFRESH_LAST_STATUS: Dict[str, bool] = {}
-APP_VERSION = "1.1.1-PI"  # MAJOR.MINOR.PATCH: PATCH = correcao, MINOR = funcionalidade nova
+APP_VERSION = "1.1.2-PI"  # MAJOR.MINOR.PATCH: PATCH = correcao, MINOR = funcionalidade nova
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVICE_STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
@@ -3089,6 +3089,26 @@ def announce_server_online(reason: str = "boot") -> None:
         },
     )
 
+def schedule_command_heartbeat(tuya_device_id: str, event_time_iso: str) -> None:
+    """Publica monitoramento sem atrasar a resposta do acionamento da placa."""
+    def publish() -> None:
+        try:
+            site_id = get_device_site_id_from_db(tuya_device_id) or SITE_NAME
+            insert_heartbeat_ok_log(
+                site_id=site_id,
+                status="ok",
+                tuya_device_id=tuya_device_id,
+                event_time_iso=event_time_iso,
+            )
+        except Exception as e:
+            log(f"[HEARTBEAT_LOG] Falha no monitoramento do comando: {e}")
+
+    try:
+        threading.Thread(target=publish, daemon=True).start()
+    except Exception as e:
+        log(f"[HEARTBEAT_LOG] Nao foi possivel iniciar monitoramento: {e}")
+
+
 def execute_tuya_command_request(data: Dict[str, Any], command_received_iso: Optional[str] = None) -> Dict[str, Any]:
     """Executa a mesma lógica de /tuya/command para uso via HTTP e comandos remotos."""
     if command_received_iso is None:
@@ -3187,6 +3207,7 @@ def execute_tuya_command_request(data: Dict[str, Any], command_received_iso: Opt
 
     version_float = float(version) if version is not None else None
 
+    action_started = time.monotonic()
     command_result = send_tuya_command(
         action=action,
         tuya_device_id=tuya_device_id,
@@ -3195,13 +3216,7 @@ def execute_tuya_command_request(data: Dict[str, Any], command_received_iso: Opt
         version=version_float
     )
 
-    site_id = get_device_site_id_from_db(tuya_device_id) or SITE_NAME
-    insert_heartbeat_ok_log(
-        site_id=site_id,
-        status="ok",
-        tuya_device_id=tuya_device_id,
-        event_time_iso=command_received_iso
-    )
+    log(f"[COMMAND_TIMING] Placa aceitou {action}: {time.monotonic() - action_started:.3f}s")
 
     if local_key and lan_ip and version_float:
         save_device_to_cache(
@@ -3230,6 +3245,9 @@ def execute_tuya_command_request(data: Dict[str, Any], command_received_iso: Opt
     else:
         log("[COMMAND] Retornando dados do dispositivo (dados do JSON)")
 
+    # Consulta de site, gravacao e reenvio de logs antigos podem levar minutos
+    # quando o Supabase esta inacessivel. Nao bloqueiam o resultado da placa.
+    schedule_command_heartbeat(tuya_device_id, command_received_iso)
     return response_data
 
 def resolve_device_context_for_test(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -3688,9 +3706,16 @@ def process_remote_command_record(record: Dict[str, Any]) -> None:
         return
 
     try:
+        action_started = time.monotonic()
         response_data = execute_remote_command_action(record)
+        log(f"[REMOTE_TIMING] Comando {command_id}: acao concluida em {time.monotonic() - action_started:.3f}s")
         if action in ("on", "off"):
-            update_remote_command_status(command_id, "done", result=response_data)
+            confirmation_started = time.monotonic()
+            confirmed = update_remote_command_status(command_id, "done", result=response_data)
+            log(
+                f"[REMOTE_TIMING] Comando {command_id}: gravacao do resultado "
+                f"em {time.monotonic() - confirmation_started:.3f}s, confirmado={confirmed}"
+            )
             log(f"[REMOTE] Comando {command_id} mantido na tabela para diagnósticos")
         elif action == "test":
             save_single_test_command_result(
