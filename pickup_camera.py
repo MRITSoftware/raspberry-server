@@ -125,8 +125,9 @@ class PickupCamera:
                     json.dump({"purchase_id": purchase_id, "file": target.name,
                                "site_id": config["site"], "device": config["device"],
                                "captured_at": captured_at}, handle)
+                # Let FFmpeg repair duplicate DTS from the camera when remuxing.
                 result = subprocess.run(
-                    ["ffmpeg", "-nostdin", "-loglevel", "error", "-xerror",
+                    ["ffmpeg", "-nostdin", "-loglevel", "error",
                      "-abort_on", "empty_output", "-rtsp_transport", "tcp", "-timeout", "5000000",
                      "-i", url, "-map", "0:v:0", "-an", "-c:v", "copy",
                      "-t", str(duration), "-movflags", "+faststart", str(clip)],
