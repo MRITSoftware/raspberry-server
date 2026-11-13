@@ -15,6 +15,7 @@ from email.utils import parsedate_to_datetime
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from functools import wraps
 from wifi_recovery import WifiRecovery
+from pickup_camera import PickupCamera, schedule_purchase_clip
 import tinytuya
 
 # =========================
@@ -92,7 +93,7 @@ COMMAND_TOTAL_DEADLINE_SECONDS = 30  # tempo máximo de um comando on/off, inclu
 DISCOVER_SCAN_SECONDS = 12  # varredura UDP para redescobrir IP (para antes se achar a placa)
 REFRESH_FAIL_COUNTS: Dict[str, int] = {}
 REFRESH_LAST_STATUS: Dict[str, bool] = {}
-APP_VERSION = "1.1.2-PI"  # MAJOR.MINOR.PATCH: PATCH = correcao, MINOR = funcionalidade nova
+APP_VERSION = "1.2.1-PI-pickup"  # MAJOR.MINOR.PATCH: PATCH = correcao, MINOR = funcionalidade nova
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVICE_STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
@@ -2081,6 +2082,9 @@ def send_tuya_command(
 # API HTTP
 # =========================
 
+pickup_camera = PickupCamera(get_supabase_url, get_supabase_headers, lambda: SITE_NAME,
+                            os.path.join(BASE_DIR, "pickup-clips"), log)
+
 app = Flask(__name__)
 app.secret_key = b'mrit-gelafit-server-secret-2024'
 
@@ -3216,6 +3220,9 @@ def execute_tuya_command_request(data: Dict[str, Any], command_received_iso: Opt
         version=version_float
     )
 
+    if action == "on" and data.get("pickup_purchase_id"):
+        schedule_purchase_clip(pickup_camera, action, tuya_device_id, data["pickup_purchase_id"], log)
+
     log(f"[COMMAND_TIMING] Placa aceitou {action}: {time.monotonic() - action_started:.3f}s")
 
     if local_key and lan_ip and version_float:
@@ -3390,6 +3397,7 @@ def execute_remote_command_action(record: Dict[str, Any]) -> Dict[str, Any]:
             "lan_ip": record.get("lan_ip"),
             "version": record.get("version"),
             "device_name": record.get("device_name"),
+            "pickup_purchase_id": record.get("pickup_purchase_id"),
         }
         return execute_tuya_command_request(payload)
 
@@ -4595,6 +4603,7 @@ def start_server(host="0.0.0.0", port=8000):
     start_device_refresh_loop()
     # Escutar comandos remotos em tempo real sem polling REST contínuo
     start_remote_command_listener()
+    pickup_camera.start()
     # Monitor de conectividade com fallback para rede reserva
     threading.Thread(target=_connectivity_watch_loop, daemon=True).start()
     # Heartbeat periódico a cada 15 minutos
