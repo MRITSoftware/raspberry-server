@@ -17,6 +17,9 @@ from urllib.parse import quote
 import requests
 
 
+REMOTE_PAIRING_SITES = {"miguelbadra@gelafit.com.br", "guaianases@gelafit.com.br"}
+
+
 class PickupCamera:
     def __init__(self, rest_url, headers, site, state_dir, log):
         self.rest_url = rest_url
@@ -29,7 +32,7 @@ class PickupCamera:
         self.busy = threading.Lock()
 
     def start(self):
-        if self.token or self.site().lower() == "miguelbadra@gelafit.com.br":
+        if self.token or self.site().lower() in REMOTE_PAIRING_SITES:
             threading.Thread(target=self.refresh_loop, daemon=True).start()
 
     def pairing_token(self):
@@ -74,7 +77,7 @@ class PickupCamera:
                 site = self.site()
                 automatic = not os.environ.get("GELAFIT_CAMERA_TOKEN")
                 if automatic:
-                    if site.lower() != "miguelbadra@gelafit.com.br":
+                    if site.lower() not in REMOTE_PAIRING_SITES:
                         self.config = None
                         time.sleep(30)
                         continue
