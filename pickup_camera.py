@@ -6,11 +6,12 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import subprocess
 import threading
 import time
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from urllib.parse import quote
 
 import requests
@@ -28,8 +29,36 @@ class PickupCamera:
         self.busy = threading.Lock()
 
     def start(self):
-        if self.token:
+        if self.token or self.site().lower() == "miguelbadra@gelafit.com.br":
             threading.Thread(target=self.refresh_loop, daemon=True).start()
+
+    def pairing_token(self):
+        path = self.state_dir / ".pairing-token"
+        if path.is_file():
+            token = path.read_text(encoding="ascii").strip()
+            if not re.fullmatch(r"[a-f0-9]{64}", token):
+                raise ValueError("Invalid local pairing credential")
+            return token
+        self.state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        token = secrets.token_hex(32)
+        with NamedTemporaryFile(dir=self.state_dir, mode="w", encoding="ascii", delete=False) as handle:
+            temp = Path(handle.name)
+            handle.write(token + "\n")
+        try:
+            os.link(temp, path)
+        except FileExistsError:
+            return self.pairing_token()
+        finally:
+            temp.unlink(missing_ok=True)
+        return token
+
+    def present_for_pairing(self, site):
+        response = requests.post(
+            f"{self.rest_url()}/rpc/camera_piloto_apresentar", headers=self.headers(),
+            json={"p_site": site, "p_hash": hashlib.sha256(self.token.encode("ascii")).hexdigest()},
+            timeout=8,
+        )
+        response.raise_for_status()
 
     def rpc(self, name, **data):
         response = requests.post(
@@ -43,8 +72,26 @@ class PickupCamera:
         while True:
             try:
                 site = self.site()
-                self.config = (site, time.monotonic(), self.rpc("camera_piloto_config").json())
+                automatic = not os.environ.get("GELAFIT_CAMERA_TOKEN")
+                if automatic:
+                    if site.lower() != "miguelbadra@gelafit.com.br":
+                        self.config = None
+                        time.sleep(30)
+                        continue
+                    if not self.token:
+                        self.token = self.pairing_token()
+                try:
+                    config = self.rpc("camera_piloto_config").json()
+                except requests.HTTPError as error:
+                    if not automatic or error.response is None or error.response.status_code not in (401, 403):
+                        raise
+                    self.present_for_pairing(site)
+                    time.sleep(15)
+                    continue
+                self.config = (site, time.monotonic(), config)
                 self.purge_expired()
+                if self.config[2] and self.config[2]["enabled"]:
+                    self.check_test(self.config[2])
             except (requests.RequestException, ValueError, RuntimeError, OSError):
                 self.log("[CAMERA] Sincronização ou limpeza indisponível.")
             try:
@@ -52,6 +99,26 @@ class PickupCamera:
             except (requests.RequestException, ValueError, RuntimeError, OSError):
                 self.log("[CAMERA] Envio pendente. Nova tentativa no próximo ciclo.")
             time.sleep(30)
+
+    def check_test(self, config):
+        if self.busy.locked():
+            return
+        try:
+            purchase_id = self.rpc("camera_piloto_receber_teste").json()
+        except (requests.RequestException, RuntimeError, ValueError):
+            return
+        if not purchase_id or not self.busy.acquire(False):
+            return
+        handed_off = False
+        try:
+            test_config = {**config, "duration": min(8, int(config["duration"]))}
+            threading.Thread(target=self.capture, args=(test_config, purchase_id), daemon=True).start()
+            handed_off = True
+        except (RuntimeError, ValueError):
+            self.log("[CAMERA] Não foi possível iniciar a gravação de teste.")
+        finally:
+            if not handed_off:
+                self.busy.release()
 
     def send_pending(self):
         site = self.site()
@@ -142,7 +209,9 @@ class PickupCamera:
             self.log("[CAMERA] Falha ao gravar a retirada.")
         finally:
             self.busy.release()
-            if status:
+            if status and purchase_id.startswith("teste:"):
+                self.log(f"[CAMERA] Resultado da gravação de teste: {status}.")
+            elif status:
                 self.log(f"[CAMERA] Resultado da gravação: {status}.")
                 try:
                     self.rpc("camera_piloto_resultado", p_purchase=purchase_id, p_status=status,
